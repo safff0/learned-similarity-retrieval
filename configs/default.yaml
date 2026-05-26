@@ -1,0 +1,31 @@
+seed: 42
+device: cuda
+
+data:
+  name: example          # registry key in src/datasets/__init__.py
+  batch_size: 256
+  num_workers: 4
+
+model:
+  name: baseline         # registry key in src/model/__init__.py
+  n_feats: 64
+  n_class: 10
+
+optimizer:
+  name: adam             # adam | sgd
+  lr: 1.0e-3
+  weight_decay: 0.0
+
+trainer:
+  num_epochs: 10
+  log_interval: 100
+  ckpt_dir: ./checkpoints
+  tb_dir: ./runs
+  loss_names: [loss]     # keys to pull from the batch dict and track
+
+metrics:
+  train: []              # list of {name: <registry-key>, ...kwargs}; empty stub
+  inference: []
+
+eval:
+  ks: [10, 50, 100]

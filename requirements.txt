@@ -1,0 +1,5 @@
+torch
+omegaconf
+tensorboard
+numpy
+tqdm
