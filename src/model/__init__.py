@@ -1,14 +1,5 @@
-from src.model.baseline_model import BaselineModel
+import importlib
+import pkgutil
 
-_MODELS = {
-    "baseline": BaselineModel,
-}
-
-
-def build_model(cfg):
-    name = cfg.model.name
-    kwargs = {k: v for k, v in cfg.model.items() if k != "name"}
-    return _MODELS[name](**kwargs)
-
-
-__all__ = ["BaselineModel", "build_model", "_MODELS"]
+for _, _mod_name, _ in pkgutil.iter_modules(__path__):
+    importlib.import_module(f"{__name__}.{_mod_name}")

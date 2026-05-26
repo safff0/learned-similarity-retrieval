@@ -1,7 +1,25 @@
-def collate_fn(items):
-    """Combine a list of dataset items into a single batch dict.
+import torch
 
-    Expected shape: items[i] is a dict (e.g. {"data_object": tensor, "labels": int}).
-    Return a dict where each key maps to a stacked/batched tensor.
+
+def collate_fn(dataset_items: list[dict]):
     """
-    raise NotImplementedError
+    Collate and pad fields in the dataset items.
+    Converts individual items into a batch.
+
+    Args:
+        dataset_items (list[dict]): list of objects from
+            dataset.__getitem__.
+    Returns:
+        result_batch (dict[Tensor]): dict, containing batch-version
+            of the tensors.
+    """
+
+    result_batch = {}
+
+    # example of collate_fn
+    result_batch["data_object"] = torch.vstack(
+        [elem["data_object"] for elem in dataset_items]
+    )
+    result_batch["labels"] = torch.tensor([elem["labels"] for elem in dataset_items])
+
+    return result_batch

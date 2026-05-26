@@ -1,30 +1,58 @@
 import sys
+import warnings
 
 from omegaconf import OmegaConf
 from torch.utils.tensorboard import SummaryWriter
 
-from src.datasets import build_dataloaders
+import src.datasets  # noqa: F401 — triggers @register decorators
+import src.metrics  # noqa: F401
+import src.model  # noqa: F401
+from src.datasets.data_utils import get_dataloaders
 from src.metrics import build_metrics
-from src.model import build_model
+from src.registry import build
 from src.trainer import Trainer, build_optimizer
-from src.utils.init_utils import get_device, load_config, set_seed
+from src.utils.init_utils import load_config, resolve_device, set_random_seed
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def main() -> None:
-    cfg = load_config(sys.argv[1:])
-    print(OmegaConf.to_yaml(cfg))
+def main():
+    """
+    Main training entrypoint. Loads the YAML config (with CLI dot overrides),
+    builds the model / optimizer / metrics / dataloaders, and runs Trainer.
+    """
+    config = load_config(sys.argv[1:])
+    print(OmegaConf.to_yaml(config))
 
-    set_seed(cfg.seed)
-    device = get_device(cfg.device)
+    set_random_seed(config.trainer.seed)
+    device = resolve_device(config.trainer.device)
 
-    loaders = build_dataloaders(cfg)
-    model = build_model(cfg).to(device)
-    optimizer = build_optimizer(cfg, model.parameters())
-    metrics = build_metrics(cfg)
-    writer = SummaryWriter(cfg.trainer.tb_dir)
+    dataloaders = get_dataloaders(config, device)
 
+    model = build("model", config.model).to(device)
     print(model)
-    Trainer(model, optimizer, loaders, metrics, cfg, writer, device).train()
+
+    metrics = build_metrics(config)
+
+    trainable_params = filter(lambda p: p.requires_grad, model.parameters())
+    optimizer = build_optimizer(config, trainable_params)
+
+    writer = SummaryWriter(config.trainer.tb_dir)
+
+    epoch_len = config.trainer.get("epoch_len")
+
+    trainer = Trainer(
+        model=model,
+        metrics=metrics,
+        optimizer=optimizer,
+        config=config,
+        device=device,
+        dataloaders=dataloaders,
+        writer=writer,
+        epoch_len=epoch_len,
+    )
+
+    trainer.train()
 
 
 if __name__ == "__main__":

@@ -1,31 +1,46 @@
-seed: 42
-device: cuda
-
 data:
-  name: example          # registry key in src/datasets/__init__.py
-  batch_size: 256
-  num_workers: 4
+  partitions:
+    train:
+      name: ExampleDataset    # class name; @register("dataset") decorator key
+      partition: train
+      input_length: 1024
+      n_classes: 10
+      dataset_length: 100
+    val:
+      name: ExampleDataset
+      partition: val
+      input_length: 1024
+      n_classes: 10
+      dataset_length: 50
+  dataloader:
+    batch_size: 10
+    num_workers: 2
+    pin_memory: true
 
 model:
-  name: baseline         # registry key in src/model/__init__.py
-  n_feats: 64
+  name: BaselineModel         # @register("model") decorator key
+  n_feats: 1024
+  fc_hidden: 512
   n_class: 10
 
 optimizer:
-  name: adam             # adam | sgd
-  lr: 1.0e-3
-  weight_decay: 0.0
-
-trainer:
-  num_epochs: 10
-  log_interval: 100
-  ckpt_dir: ./checkpoints
-  tb_dir: ./runs
-  loss_names: [loss]     # keys to pull from the batch dict and track
+  name: Adam                  # class in torch.optim (Adam | SGD | AdamW | ...)
+  lr: 3.0e-4
 
 metrics:
-  train: []              # list of {name: <registry-key>, ...kwargs}; empty stub
+  device: auto
+  train: []
   inference: []
 
-eval:
-  ks: [10, 50, 100]
+trainer:
+  device: auto                          # auto | cuda | cpu
+  seed: 1
+  n_epochs: 10
+  epoch_len: null                       # null = epoch-based; int = iter-based
+  log_step: 50
+  save_period: 5
+  save_dir: ./saved/default
+  tb_dir: ./runs/default
+  device_tensors: [data_object, labels]
+  loss_names: [loss]
+  max_grad_norm: null

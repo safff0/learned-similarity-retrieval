@@ -1,25 +1,56 @@
+from itertools import repeat
+
 from torch.utils.data import DataLoader
 
 from src.datasets.collate import collate_fn
+from src.registry import build
+from src.utils.init_utils import set_worker_seed
 
 
-def build_dataloaders(cfg) -> dict:
-    from src.datasets import _DATASETS
+def inf_loop(dataloader):
+    """
+    Wrapper function for endless dataloader.
+    Used for iteration-based training scheme.
 
-    dataset_cls = _DATASETS[cfg.data.name]
-    dataset_kwargs = {
-        k: v for k, v in cfg.data.items() if k not in {"name", "batch_size", "num_workers"}
-    }
+    Args:
+        dataloader (DataLoader): classic finite dataloader.
+    """
+    for loader in repeat(dataloader):
+        yield from loader
 
-    train_dataset = dataset_cls(partition="train", **dataset_kwargs)
-    val_dataset = dataset_cls(partition="val", **dataset_kwargs)
 
-    common = dict(
-        batch_size=cfg.data.batch_size,
-        num_workers=cfg.data.num_workers,
-        collate_fn=collate_fn,
-    )
-    return {
-        "train": DataLoader(train_dataset, shuffle=True, drop_last=True, **common),
-        "val": DataLoader(val_dataset, shuffle=False, **common),
-    }
+def get_dataloaders(config, device):
+    """
+    Create dataloaders for each of the dataset partitions.
+
+    Each entry under ``config.data.partitions`` is a dataset spec (with a
+    ``name:`` key resolved against the registry) plus the dataset's kwargs.
+
+    Args:
+        config (DictConfig): experiment config.
+        device (str): device (kept for parity; not used here).
+    Returns:
+        dataloaders (dict[DataLoader]): dict containing dataloader for a
+            partition defined by key.
+    """
+    loader_kwargs = dict(config.data.dataloader)
+
+    dataloaders = {}
+    for partition_name, partition_spec in config.data.partitions.items():
+        dataset = build("dataset", partition_spec)
+
+        assert loader_kwargs["batch_size"] <= len(dataset), (
+            f"The batch size ({loader_kwargs['batch_size']}) cannot "
+            f"be larger than the dataset length ({len(dataset)})"
+        )
+
+        dataloaders[partition_name] = DataLoader(
+            dataset,
+            collate_fn=collate_fn,
+            drop_last=(partition_name == "train"),
+            shuffle=(partition_name == "train"),
+            worker_init_fn=set_worker_seed,
+            **loader_kwargs,
+        )
+
+    return dataloaders

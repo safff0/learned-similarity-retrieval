@@ -1,21 +1,26 @@
-from src.metrics.base_metric import BaseMetric
-from src.metrics.example import ExampleMetric
+import importlib
+import pkgutil
+
 from src.metrics.tracker import MetricTracker
+from src.registry import build
 
-_METRICS = {
-    "example": ExampleMetric,
-}
+for _, _mod_name, _ in pkgutil.iter_modules(__path__):
+    importlib.import_module(f"{__name__}.{_mod_name}")
 
 
-def build_metrics(cfg) -> dict:
+def build_metrics(config) -> dict:
+    """
+    Build metric instances grouped by stage.
+
+    Reads ``config.metrics.train`` and ``config.metrics.inference`` (both lists
+    of specs with ``name:`` keys).
+    """
     out = {"train": [], "inference": []}
     for stage in ("train", "inference"):
-        entries = cfg.metrics.get(stage, []) or []
+        entries = config.metrics.get(stage, []) or []
         for entry in entries:
-            entry = dict(entry)
-            name = entry.pop("name")
-            out[stage].append(_METRICS[name](**entry))
+            out[stage].append(build("metric", entry))
     return out
 
 
-__all__ = ["BaseMetric", "ExampleMetric", "MetricTracker", "build_metrics", "_METRICS"]
+__all__ = ["MetricTracker", "build_metrics"]

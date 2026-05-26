@@ -1,9 +1,5 @@
-from src.datasets.example import ExampleDataset
+import importlib
+import pkgutil
 
-_DATASETS = {
-    "example": ExampleDataset,
-}
-
-from src.datasets.data_utils import build_dataloaders  # noqa: E402
-
-__all__ = ["ExampleDataset", "build_dataloaders", "_DATASETS"]
+for _, _mod_name, _ in pkgutil.iter_modules(__path__):
+    importlib.import_module(f"{__name__}.{_mod_name}")

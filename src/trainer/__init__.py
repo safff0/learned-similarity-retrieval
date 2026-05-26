@@ -1,18 +1,20 @@
-from torch import optim
+import torch
 
 from src.trainer.base_trainer import BaseTrainer
 from src.trainer.trainer import Trainer
 
-_OPTIMIZERS = {
-    "adam": optim.Adam,
-    "sgd": optim.SGD,
-}
+
+def build_optimizer(config, params):
+    """
+    Build an optimizer by name from :mod:`torch.optim`.
+
+    ``config.optimizer.name`` is the class name (e.g. ``Adam``, ``SGD``,
+    ``AdamW``); remaining keys are passed as kwargs to the constructor.
+    """
+    spec = dict(config.optimizer)
+    name = spec.pop("name")
+    cls = getattr(torch.optim, name)
+    return cls(params, **spec)
 
 
-def build_optimizer(cfg, params):
-    name = cfg.optimizer.name
-    kwargs = {k: v for k, v in cfg.optimizer.items() if k != "name"}
-    return _OPTIMIZERS[name](params, **kwargs)
-
-
-__all__ = ["BaseTrainer", "Trainer", "build_optimizer", "_OPTIMIZERS"]
+__all__ = ["BaseTrainer", "Trainer", "build_optimizer"]

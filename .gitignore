@@ -1,7 +1,10 @@
 # Project-specific
 runs/
+saved/
 checkpoints/
+data/
 *.ckpt
+*.pth
 .venv/
 
 # Byte-compiled / optimized / DLL files

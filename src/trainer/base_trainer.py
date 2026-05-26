@@ -2,97 +2,303 @@ from abc import abstractmethod
 from pathlib import Path
 
 import torch
+from torch.nn.utils import clip_grad_norm_
+from tqdm.auto import tqdm
 
+from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
-from src.utils.io_utils import save_checkpoint
 
 
 class BaseTrainer:
-    """Owns the epoch loop, checkpointing, and metric tracking.
-
-    Subclasses must implement ``process_batch`` (per-batch forward / loss / step)
-    and ``_log_batch`` (anything extra to log beyond scalars).
+    """
+    Base class for all trainers.
     """
 
-    def __init__(self, model, optimizer, dataloaders, metrics, config, writer, device):
-        self.model = model
-        self.optimizer = optimizer
-        self.dataloaders = dataloaders
-        self.metrics = metrics
+    def __init__(
+        self,
+        model,
+        metrics,
+        optimizer,
+        config,
+        device,
+        dataloaders,
+        writer,
+        epoch_len=None,
+    ):
+        """
+        Args:
+            model (nn.Module): PyTorch model. Expected to return a dict that
+                includes a 'loss' key during training (no separate criterion
+                module in this template).
+            metrics (dict): dict with the definition of metrics for training
+                (metrics[train]) and inference (metrics[inference]). Each
+                metric is an instance of src.metrics.BaseMetric.
+            optimizer (Optimizer): optimizer for the model.
+            config (DictConfig): experiment config containing training config.
+            device (str): device for tensors and model.
+            dataloaders (dict[DataLoader]): dataloaders for different
+                sets of data.
+            writer (SummaryWriter): TensorBoard writer.
+            epoch_len (int | None): number of steps in each epoch for
+                iteration-based training. If None, use epoch-based
+                training (len(dataloader)).
+        """
+        self.is_train = True
+
         self.config = config
-        self.writer = writer
+        self.cfg_trainer = self.config.trainer
+
         self.device = device
 
-        self.epochs: int = config.trainer.num_epochs
-        self.log_interval: int = config.trainer.log_interval
-        self.ckpt_dir = Path(config.trainer.ckpt_dir)
-        self.ckpt_dir.mkdir(parents=True, exist_ok=True)
+        self.log_step = config.trainer.get("log_step", 50)
 
-        self.is_train = False
+        self.model = model
+        self.optimizer = optimizer
 
-    def train(self) -> None:
+        # define dataloaders
+        self.train_dataloader = dataloaders["train"]
+        if epoch_len is None:
+            # epoch-based training
+            self.epoch_len = len(self.train_dataloader)
+        else:
+            # iteration-based training
+            self.train_dataloader = inf_loop(self.train_dataloader)
+            self.epoch_len = epoch_len
+
+        self.evaluation_dataloaders = {
+            k: v for k, v in dataloaders.items() if k != "train"
+        }
+
+        # define epochs
+        self._last_epoch = 0  # required for saving on interruption
+        self.start_epoch = 1
+        self.epochs = self.cfg_trainer.n_epochs
+
+        self.save_period = self.cfg_trainer.save_period
+
+        # setup visualization writer instance
+        self.writer = writer
+
+        # define metrics
+        self.metrics = metrics
+        self.train_metrics = MetricTracker(
+            *self.config.trainer.loss_names,
+            "grad_norm",
+            *[m.name for m in self.metrics["train"]],
+            writer=self.writer,
+        )
+        self.evaluation_metrics = MetricTracker(
+            *self.config.trainer.loss_names,
+            *[m.name for m in self.metrics["inference"]],
+            writer=self.writer,
+        )
+
+        # define checkpoint dir
+        self.checkpoint_dir = Path(config.trainer.save_dir)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    def train(self):
+        """
+        Wrapper around training process to save model on keyboard interrupt.
+        """
         try:
-            for epoch in range(1, self.epochs + 1):
-                self._train_epoch(epoch)
-                for partition in self.dataloaders:
-                    if partition == "train":
-                        continue
-                    self._evaluation_epoch(epoch, partition)
-                save_checkpoint(
-                    self.ckpt_dir / f"epoch_{epoch}.ckpt",
-                    self.model,
-                    self.optimizer,
-                    epoch,
-                )
-        except KeyboardInterrupt:
-            save_checkpoint(
-                self.ckpt_dir / "interrupt.ckpt", self.model, self.optimizer, -1
-            )
-            raise
+            self._train_process()
+        except KeyboardInterrupt as e:
+            print("Saving model on keyboard interrupt")
+            self._save_checkpoint(self._last_epoch)
+            raise e
 
-    def _train_epoch(self, epoch: int) -> dict:
+    def _train_process(self):
+        """
+        Full training logic: training model for an epoch, evaluating it on
+        non-train partitions, and saving checkpoints periodically.
+        """
+        for epoch in range(self.start_epoch, self.epochs + 1):
+            self._last_epoch = epoch
+            result = self._train_epoch(epoch)
+
+            logs = {"epoch": epoch}
+            logs.update(result)
+
+            # print logged information to the screen
+            for key, value in logs.items():
+                print(f"    {key:15s}: {value}")
+
+            if epoch % self.save_period == 0:
+                self._save_checkpoint(epoch)
+
+    def _train_epoch(self, epoch):
+        """
+        Training logic for an epoch, including logging and evaluation on
+        non-train partitions.
+
+        Args:
+            epoch (int): current training epoch.
+        Returns:
+            logs (dict): logs that contain the average loss and metric in
+                this epoch.
+        """
         self.is_train = True
         self.model.train()
-        tracker = self._make_tracker("train")
-        loader = self.dataloaders["train"]
-        for i, batch in enumerate(loader):
-            batch = self.process_batch(batch, tracker)
-            if i % self.log_interval == 0:
-                self._log_batch(i, batch, mode="train")
-                step = (epoch - 1) * len(loader) + i
-                for k, v in tracker.result().items():
-                    self.writer.add_scalar(f"train/{k}", v, step)
-                print(f"[epoch {epoch} step {i}] {tracker.result()}")
-        return tracker.result()
+        self.train_metrics.reset()
+        last_train_metrics = {}
+        for batch_idx, batch in enumerate(
+            tqdm(self.train_dataloader, desc="train", total=self.epoch_len)
+        ):
+            batch = self.process_batch(
+                batch,
+                metrics=self.train_metrics,
+            )
 
-    def _evaluation_epoch(self, epoch: int, partition: str) -> dict:
+            self.train_metrics.update("grad_norm", self._get_grad_norm())
+
+            # log current results
+            if batch_idx % self.log_step == 0:
+                global_step = (epoch - 1) * self.epoch_len + batch_idx
+                self._log_scalars(self.train_metrics, "train", global_step)
+                self._log_batch(batch_idx, batch)
+                # we don't want to reset train metrics at the start of every epoch
+                # because we are interested in recent train metrics
+                last_train_metrics = self.train_metrics.result()
+                self.train_metrics.reset()
+            if batch_idx + 1 >= self.epoch_len:
+                break
+
+        logs = dict(last_train_metrics)
+
+        # Run val/test
+        for part, dataloader in self.evaluation_dataloaders.items():
+            val_logs = self._evaluation_epoch(epoch, part, dataloader)
+            logs.update(**{f"{part}_{name}": value for name, value in val_logs.items()})
+
+        return logs
+
+    def _evaluation_epoch(self, epoch, part, dataloader):
+        """
+        Evaluate model on the partition after training for an epoch.
+
+        Args:
+            epoch (int): current training epoch.
+            part (str): partition to evaluate on
+            dataloader (DataLoader): dataloader for the partition.
+        Returns:
+            logs (dict): logs that contain the information about evaluation.
+        """
         self.is_train = False
         self.model.eval()
-        tracker = self._make_tracker("inference")
+        self.evaluation_metrics.reset()
         with torch.no_grad():
-            for i, batch in enumerate(self.dataloaders[partition]):
-                batch = self.process_batch(batch, tracker)
-                self._log_batch(i, batch, mode=partition)
-        for k, v in tracker.result().items():
-            self.writer.add_scalar(f"{partition}/{k}", v, epoch)
-        print(f"[epoch {epoch} {partition}] {tracker.result()}")
-        return tracker.result()
+            for batch_idx, batch in tqdm(
+                enumerate(dataloader),
+                desc=part,
+                total=len(dataloader),
+            ):
+                batch = self.process_batch(
+                    batch,
+                    metrics=self.evaluation_metrics,
+                )
+            self._log_scalars(self.evaluation_metrics, part, epoch * self.epoch_len)
+            self._log_batch(
+                batch_idx, batch, part
+            )  # log only the last batch during inference
 
-    def _make_tracker(self, stage: str) -> MetricTracker:
-        loss_names = list(self.config.trainer.loss_names)
-        metric_names = [m.name for m in self.metrics[stage]]
-        return MetricTracker(*loss_names, *metric_names)
+        return self.evaluation_metrics.result()
 
-    def move_batch_to_device(self, batch: dict) -> dict:
-        for k, v in batch.items():
-            if isinstance(v, torch.Tensor):
-                batch[k] = v.to(self.device)
+    def move_batch_to_device(self, batch):
+        """
+        Move all necessary tensors to the device.
+
+        Args:
+            batch (dict): dict-based batch containing the data from
+                the dataloader.
+        Returns:
+            batch (dict): dict-based batch containing the data from
+                the dataloader with some of the tensors on the device.
+        """
+        for tensor_for_device in self.cfg_trainer.device_tensors:
+            batch[tensor_for_device] = batch[tensor_for_device].to(self.device)
         return batch
 
-    @abstractmethod
-    def process_batch(self, batch, metrics: MetricTracker):
-        raise NotImplementedError
+    def _clip_grad_norm(self):
+        """
+        Clips the gradient norm by the value defined in
+        config.trainer.max_grad_norm
+        """
+        if self.config["trainer"].get("max_grad_norm", None) is not None:
+            clip_grad_norm_(
+                self.model.parameters(), self.config["trainer"]["max_grad_norm"]
+            )
+
+    @torch.no_grad()
+    def _get_grad_norm(self, norm_type=2):
+        """
+        Calculates the gradient norm for logging.
+
+        Args:
+            norm_type (float | str | None): the order of the norm.
+        Returns:
+            total_norm (float): the calculated norm.
+        """
+        parameters = self.model.parameters()
+        if isinstance(parameters, torch.Tensor):
+            parameters = [parameters]
+        parameters = [p for p in parameters if p.grad is not None]
+        if not parameters:
+            return 0.0
+        total_norm = torch.norm(
+            torch.stack([torch.norm(p.grad.detach(), norm_type) for p in parameters]),
+            norm_type,
+        )
+        return total_norm.item()
 
     @abstractmethod
-    def _log_batch(self, batch_idx: int, batch, mode: str = "train") -> None:
-        raise NotImplementedError
+    def _log_batch(self, batch_idx, batch, mode="train"):
+        """
+        Abstract method. Should be defined in the nested Trainer Class.
+
+        Log data from batch. Calls self.writer.add_* to log data
+        to the experiment tracker.
+
+        Args:
+            batch_idx (int): index of the current batch.
+            batch (dict): dict-based batch after going through
+                the 'process_batch' function.
+            mode (str): train or inference. Defines which logging
+                rules to apply.
+        """
+        return NotImplementedError()
+
+    def _log_scalars(self, metric_tracker: MetricTracker, mode: str, step: int):
+        """
+        Wrapper around the writer 'add_scalar' to log all metrics.
+
+        Args:
+            metric_tracker (MetricTracker): calculated metrics.
+            mode (str): "train" or partition name.
+            step (int): global step for the writer.
+        """
+        if self.writer is None:
+            return
+        for metric_name in metric_tracker.keys():
+            self.writer.add_scalar(
+                f"{mode}/{metric_name}", metric_tracker.avg(metric_name), step
+            )
+
+    def _save_checkpoint(self, epoch):
+        """
+        Save the checkpoint.
+
+        Args:
+            epoch (int): current epoch number.
+        """
+        arch = type(self.model).__name__
+        state = {
+            "arch": arch,
+            "epoch": epoch,
+            "state_dict": self.model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "config": self.config,
+        }
+        filename = str(self.checkpoint_dir / f"checkpoint-epoch{epoch}.pth")
+        torch.save(state, filename)
+        print(f"Saving checkpoint: {filename} ...")
