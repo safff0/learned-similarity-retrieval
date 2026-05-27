@@ -35,8 +35,8 @@ def build(kind: str, spec: Any) -> Any:
     The spec is a dict-like with a ``name`` key (resolved against the registry)
     plus remaining keys passed as kwargs to the class constructor.
     """
-    spec = asdict(spec)
-    name = spec.pop("name")
+    name = spec.name
+    spec = spec.params
     cls = get(kind, name)
     return cls(**spec)
 

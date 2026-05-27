@@ -17,8 +17,8 @@ def build_optimizer(config: Config, params: Iterable[Parameter]) -> Optimizer:
     ``config.optimizer.name`` is the class name (e.g. ``Adam``, ``SGD``,
     ``AdamW``); remaining keys are passed as kwargs to the constructor.
     """
-    spec = asdict(config.optimizer)
-    name = spec.pop("name")
+    spec = config.optimizer.params
+    name = config.optimizer.name
     cls = getattr(torch.optim, name)
     return cls(params, **spec)
 

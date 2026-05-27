@@ -31,6 +31,7 @@ def main() -> None:
     device = resolve_device(config.trainer.device)
 
     dataloaders = get_dataloaders(config, device)
+    logger.info("loaded datasets")
 
     model = build("model", config.model).to(device)
     logger.info(f"loaded model: {config.model.name}")

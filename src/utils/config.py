@@ -1,13 +1,18 @@
 from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class ObjectConfig:
+    name: str
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class DatasetPartitionConfig:
     name: str = "ExampleDataset"
     partition: str = "train"
-    input_length: int = 1024
-    n_classes: int = 10
-    dataset_length: int = 100
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -21,32 +26,62 @@ class DataLoaderConfig:
 class DataConfig:
     partitions: dict[str, DatasetPartitionConfig] = field(
         default_factory=lambda: {
-            "train": DatasetPartitionConfig(partition="train", dataset_length=100),
-            "val": DatasetPartitionConfig(partition="val", dataset_length=50),
+            "train": DatasetPartitionConfig(
+                name="ExampleDataset",
+                partition="train",
+                params={
+                    "input_length": 1024,
+                    "n_classes": 10,
+                    "dataset_length": 100,
+                },
+            ),
+            "val": DatasetPartitionConfig(
+                name="ExampleDataset",
+                partition="val",
+                params={
+                    "input_length": 1024,
+                    "n_classes": 10,
+                    "dataset_length": 50,
+                },
+            ),
         }
     )
     dataloader: DataLoaderConfig = field(default_factory=DataLoaderConfig)
 
 
 @dataclass
-class ModelConfig:
+class ModelConfig(ObjectConfig):
     name: str = "BaselineModel"
-    n_feats: int = 1024
-    fc_hidden: int = 512
-    n_class: int = 10
+    params: dict[str, Any] = field(
+        default_factory=lambda: {
+            "n_feats": 1024,
+            "fc_hidden": 512,
+            "n_class": 10,
+        }
+    )
 
 
 @dataclass
-class OptimizerConfig:
+class OptimizerConfig(ObjectConfig):
     name: str = "Adam"
-    lr: float = 3.0e-4
+    params: dict[str, Any] = field(
+        default_factory=lambda: {
+            "lr": 3.0e-4,
+        }
+    )
 
 
 @dataclass
 class MetricsConfig:
     device: str = "auto"
+
+    # Could be names only:
     train: list[str] = field(default_factory=list)
     inference: list[str] = field(default_factory=list)
+
+    # Or, if you later want metrics with params, use:
+    # train: list[ObjectConfig] = field(default_factory=list)
+    # inference: list[ObjectConfig] = field(default_factory=list)
 
 
 @dataclass

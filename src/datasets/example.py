@@ -1,3 +1,6 @@
+import logging
+from typing import Any
+
 import numpy as np
 import torch
 from tqdm.auto import tqdm
@@ -5,6 +8,8 @@ from tqdm.auto import tqdm
 from src.datasets.base_dataset import BaseDataset
 from src.registry import register
 from src.utils.io_utils import ROOT_PATH, read_json, write_json
+
+logger = logging.getLogger(__name__)
 
 
 @register("dataset")
@@ -18,13 +23,13 @@ class ExampleDataset(BaseDataset):
 
     def __init__(
         self,
-        input_length,
-        n_classes,
-        dataset_length,
-        partition="train",
-        *args,
-        **kwargs,
-    ):
+        input_length: int,
+        n_classes: int,
+        dataset_length: int,
+        partition: str = "train",
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         """
         Args:
             input_length (int): length of the random vector.
@@ -47,7 +52,9 @@ class ExampleDataset(BaseDataset):
 
         super().__init__(index, *args, **kwargs)
 
-    def _create_index(self, input_length, n_classes, dataset_length, partition):
+    def _create_index(
+        self, input_length: int, n_classes: int, dataset_length: int, partition: str
+    ) -> list[dict[str, Any]]:
         """
         Create index for the dataset. The function processes dataset metadata
         and utilizes it to get information dict for each element of
@@ -74,7 +81,7 @@ class ExampleDataset(BaseDataset):
         # In this example, we create a synthesized dataset. However, in real
         # tasks, you should process dataset metadata and append it
         # to index.
-        print("Creating Example Dataset")
+        logger.info("Creating Example Dataset")
         for i in tqdm(range(dataset_length)):
             example_path = data_path / f"{i:0{number_of_zeros}d}.pt"
             example_data = torch.randn(input_length)

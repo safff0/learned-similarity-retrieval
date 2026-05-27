@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from tqdm.auto import tqdm
 from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
 from src.utils.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTrainer:
@@ -110,7 +113,7 @@ class BaseTrainer:
         try:
             self._train_process()
         except KeyboardInterrupt as e:
-            print("Saving model on keyboard interrupt")
+            logger.warning("Saving model on keyboard interrupt")
             self._save_checkpoint(self._last_epoch)
             raise e
 
@@ -126,9 +129,8 @@ class BaseTrainer:
             logs = {"epoch": epoch}
             logs.update(result)
 
-            # print logged information to the screen
             for key, value in logs.items():
-                print(f"    {key:15s}: {value}")
+                logger.info("    %-15s: %s", key, value)
 
             if epoch % self.save_period == 0:
                 self._save_checkpoint(epoch)
@@ -274,7 +276,7 @@ class BaseTrainer:
         """
         return NotImplementedError()
 
-    def _log_scalars(self, metric_tracker: MetricTracker, mode: str, step: int):
+    def _log_scalars(self, metric_tracker: MetricTracker, mode: str, step: int) -> None:
         """
         Wrapper around the writer 'add_scalar' to log all metrics.
 
@@ -307,4 +309,4 @@ class BaseTrainer:
         }
         filename = str(self.checkpoint_dir / f"checkpoint-epoch{epoch}.pth")
         torch.save(state, filename)
-        print(f"Saving checkpoint: {filename} ...")
+        logger.info("Saving checkpoint: %s ...", filename)

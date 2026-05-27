@@ -1,4 +1,7 @@
-from torch import nn
+from typing import Any
+
+import torch
+from torch import nn, Tensor
 from torch.nn import Sequential, functional as F
 
 from src.registry import register
@@ -10,7 +13,7 @@ class BaselineModel(nn.Module):
     Simple MLP
     """
 
-    def __init__(self, n_feats, n_class, fc_hidden=512):
+    def __init__(self, n_feats: int, n_class: int, fc_hidden: int = 512) -> None:
         """
         Args:
             n_feats (int): number of input features.
@@ -28,7 +31,7 @@ class BaselineModel(nn.Module):
             nn.Linear(in_features=fc_hidden, out_features=n_class),
         )
 
-    def forward(self, data_object, labels=None, **batch):
+    def forward(self, data_object: Tensor, labels: Tensor | None = None, **batch: Any) -> dict[str, Tensor]:
         """
         Model forward method.
 
@@ -48,7 +51,7 @@ class BaselineModel(nn.Module):
             out["loss"] = F.cross_entropy(logits, labels)
         return out
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Model prints with the number of parameters.
         """

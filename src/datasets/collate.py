@@ -1,7 +1,9 @@
+from typing import Any
+
 import torch
 
 
-def collate_fn(dataset_items: list[dict]) -> dict[str, torch.Tensor]:
+def collate_fn(dataset_items: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
     """
     Collate and pad fields in the dataset items.
     Converts individual items into a batch.

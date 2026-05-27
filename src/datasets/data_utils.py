@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from itertools import repeat
 from dataclasses import asdict
+from typing import Any
 
 from torch.utils.data import DataLoader
 
@@ -10,7 +11,7 @@ from src.utils.init_utils import set_worker_seed
 from src.utils.config import Config
 
 
-def inf_loop(dataloader: DataLoader) -> Iterator:
+def inf_loop(dataloader: DataLoader) -> Iterator[dict[str, Any]]:
     """
     Wrapper function for endless dataloader.
     Used for iteration-based training scheme.

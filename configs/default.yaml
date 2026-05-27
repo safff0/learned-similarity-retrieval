@@ -1,31 +1,34 @@
 data:
   partitions:
     train:
-      name: ExampleDataset    # class name; @register("dataset") decorator key
-      partition: train
-      input_length: 1024
-      n_classes: 10
-      dataset_length: 100
+      name: MovieLensDataset
+      params:
+        variant: "ml-1m"
+        partition: train
+        rating_threshold: 4
     val:
       name: ExampleDataset
-      partition: val
-      input_length: 1024
-      n_classes: 10
-      dataset_length: 50
+      params:
+        partition: val
+        input_length: 1024
+        n_classes: 10
+        dataset_length: 50
   dataloader:
     batch_size: 10
     num_workers: 2
     pin_memory: true
 
 model:
-  name: BaselineModel         # @register("model") decorator key
-  n_feats: 1024
-  fc_hidden: 512
-  n_class: 10
+  name: BaselineModel
+  params:
+    n_feats: 1024
+    fc_hidden: 512
+    n_class: 10
 
 optimizer:
-  name: Adam                  # class in torch.optim (Adam | SGD | AdamW | ...)
-  lr: 3.0e-4
+  name: Adam
+  params:
+    lr: 3.0e-4
 
 metrics:
   device: auto
@@ -33,10 +36,10 @@ metrics:
   inference: []
 
 trainer:
-  device: auto                          # auto | cuda | cpu
+  device: auto
   seed: 1
   n_epochs: 10
-  epoch_len: null                       # null = epoch-based; int = iter-based
+  epoch_len: null
   log_step: 50
   save_period: 5
   save_dir: ./saved/default
