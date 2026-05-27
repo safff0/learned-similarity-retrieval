@@ -1,4 +1,5 @@
 import pandas as pd
+from torch.utils.tensorboard import SummaryWriter
 
 
 class MetricTracker:
@@ -6,7 +7,7 @@ class MetricTracker:
     Class to aggregate metrics from many batches.
     """
 
-    def __init__(self, *keys, writer=None):
+    def __init__(self, *keys: str, writer: SummaryWriter | None = None) -> None:
         """
         Args:
             *keys (list[str]): list (as positional arguments) of metric
@@ -18,13 +19,13 @@ class MetricTracker:
         self._data = pd.DataFrame(index=keys, columns=["total", "counts", "average"])
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         """
         Reset all metrics after epoch end.
         """
         self._data.loc[:, :] = 0
 
-    def update(self, key, value, n=1):
+    def update(self, key: str, value: float, n: int = 1) -> None:
         """
         Update metrics DataFrame with new value.
 
@@ -37,7 +38,7 @@ class MetricTracker:
         self._data.loc[key, "counts"] += n
         self._data.loc[key, "average"] = self._data.total[key] / self._data.counts[key]
 
-    def avg(self, key):
+    def avg(self, key: str) -> float:
         """
         Return average value for a given metric.
 
@@ -48,7 +49,7 @@ class MetricTracker:
         """
         return self._data.average[key]
 
-    def result(self):
+    def result(self) -> dict[str, float]:
         """
         Return average value of each metric.
 
@@ -58,7 +59,7 @@ class MetricTracker:
         """
         return dict(self._data.average)
 
-    def keys(self):
+    def keys(self) -> pd.Index:
         """
         Return all metric names defined in the MetricTracker.
 

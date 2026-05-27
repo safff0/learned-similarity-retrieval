@@ -1,7 +1,12 @@
+from collections.abc import Callable
+from dataclasses import asdict
+from typing import Any
+
+
 _REGISTRY: dict[str, dict[str, type]] = {}
 
 
-def register(kind: str):
+def register(kind: str) -> Callable[[type], type]:
     """Decorator: register a class under ``kind`` keyed by its class name.
 
     Example:
@@ -16,7 +21,7 @@ def register(kind: str):
     return deco
 
 
-def get(kind: str, name: str):
+def get(kind: str, name: str) -> type:
     """Look up a registered class by ``kind`` + ``name`` (no instantiation)."""
     if kind not in _REGISTRY or name not in _REGISTRY[kind]:
         available = sorted(_REGISTRY.get(kind, {}).keys())
@@ -24,13 +29,13 @@ def get(kind: str, name: str):
     return _REGISTRY[kind][name]
 
 
-def build(kind: str, spec):
+def build(kind: str, spec: Any) -> Any:
     """Instantiate a registered class from a config spec.
 
     The spec is a dict-like with a ``name`` key (resolved against the registry)
     plus remaining keys passed as kwargs to the class constructor.
     """
-    spec = dict(spec)
+    spec = asdict(spec)
     name = spec.pop("name")
     cls = get(kind, name)
     return cls(**spec)

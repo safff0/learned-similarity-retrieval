@@ -3,12 +3,13 @@ import pkgutil
 
 from src.metrics.tracker import MetricTracker
 from src.registry import build
+from src.utils.config import Config
 
 for _, _mod_name, _ in pkgutil.iter_modules(__path__):
     importlib.import_module(f"{__name__}.{_mod_name}")
 
 
-def build_metrics(config) -> dict:
+def build_metrics(config: Config) -> dict[str, list]:
     """
     Build metric instances grouped by stage.
 
@@ -17,7 +18,7 @@ def build_metrics(config) -> dict:
     """
     out = {"train": [], "inference": []}
     for stage in ("train", "inference"):
-        entries = config.metrics.get(stage, []) or []
+        entries = getattr(config.metrics, stage, []) or []
         for entry in entries:
             out[stage].append(build("metric", entry))
     return out

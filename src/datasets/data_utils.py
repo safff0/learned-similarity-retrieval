@@ -1,13 +1,16 @@
+from collections.abc import Iterator
 from itertools import repeat
+from dataclasses import asdict
 
 from torch.utils.data import DataLoader
 
 from src.datasets.collate import collate_fn
 from src.registry import build
 from src.utils.init_utils import set_worker_seed
+from src.utils.config import Config
 
 
-def inf_loop(dataloader):
+def inf_loop(dataloader: DataLoader) -> Iterator:
     """
     Wrapper function for endless dataloader.
     Used for iteration-based training scheme.
@@ -19,7 +22,7 @@ def inf_loop(dataloader):
         yield from loader
 
 
-def get_dataloaders(config, device):
+def get_dataloaders(config: Config, device: str) -> dict[str, DataLoader]:
     """
     Create dataloaders for each of the dataset partitions.
 
@@ -33,14 +36,12 @@ def get_dataloaders(config, device):
         dataloaders (dict[DataLoader]): dict containing dataloader for a
             partition defined by key.
     """
-    loader_kwargs = dict(config.data.dataloader)
-
     dataloaders = {}
     for partition_name, partition_spec in config.data.partitions.items():
         dataset = build("dataset", partition_spec)
 
-        assert loader_kwargs["batch_size"] <= len(dataset), (
-            f"The batch size ({loader_kwargs['batch_size']}) cannot "
+        assert config.data.dataloader.batch_size <= len(dataset), (
+            f"The batch size ({config.data.dataloader.batch_size}) cannot "
             f"be larger than the dataset length ({len(dataset)})"
         )
 
@@ -50,7 +51,7 @@ def get_dataloaders(config, device):
             drop_last=(partition_name == "train"),
             shuffle=(partition_name == "train"),
             worker_init_fn=set_worker_seed,
-            **loader_kwargs,
+            **asdict(config.data.dataloader),
         )
 
     return dataloaders

@@ -1,12 +1,18 @@
 from abc import abstractmethod
 from pathlib import Path
+from typing import Any
 
 import torch
+import torch.nn as nn
+from torch.optim import Optimizer
 from torch.nn.utils import clip_grad_norm_
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
+from src.utils.config import Config
 
 
 class BaseTrainer:
@@ -16,15 +22,15 @@ class BaseTrainer:
 
     def __init__(
         self,
-        model,
-        metrics,
-        optimizer,
-        config,
-        device,
-        dataloaders,
-        writer,
-        epoch_len=None,
-    ):
+        model: nn.Module,
+        metrics: dict[str, list],
+        optimizer: Optimizer,
+        config: Config,
+        device: str,
+        dataloaders: dict[str, DataLoader],
+        writer: SummaryWriter | None,
+        epoch_len: int | None = None,
+    ) -> None:
         """
         Args:
             model (nn.Module): PyTorch model. Expected to return a dict that
@@ -50,7 +56,7 @@ class BaseTrainer:
 
         self.device = device
 
-        self.log_step = config.trainer.get("log_step", 50)
+        self.log_step = config.trainer.log_step or 50
 
         self.model = model
         self.optimizer = optimizer
@@ -97,7 +103,7 @@ class BaseTrainer:
         self.checkpoint_dir = Path(config.trainer.save_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    def train(self):
+    def train(self) -> None:
         """
         Wrapper around training process to save model on keyboard interrupt.
         """
@@ -108,7 +114,7 @@ class BaseTrainer:
             self._save_checkpoint(self._last_epoch)
             raise e
 
-    def _train_process(self):
+    def _train_process(self) -> None:
         """
         Full training logic: training model for an epoch, evaluating it on
         non-train partitions, and saving checkpoints periodically.
@@ -127,7 +133,7 @@ class BaseTrainer:
             if epoch % self.save_period == 0:
                 self._save_checkpoint(epoch)
 
-    def _train_epoch(self, epoch):
+    def _train_epoch(self, epoch: int) -> dict[str, Any]:
         """
         Training logic for an epoch, including logging and evaluation on
         non-train partitions.
@@ -173,7 +179,7 @@ class BaseTrainer:
 
         return logs
 
-    def _evaluation_epoch(self, epoch, part, dataloader):
+    def _evaluation_epoch(self, epoch: int, part: str, dataloader: DataLoader) -> dict[str, float]:
         """
         Evaluate model on the partition after training for an epoch.
 
@@ -204,7 +210,7 @@ class BaseTrainer:
 
         return self.evaluation_metrics.result()
 
-    def move_batch_to_device(self, batch):
+    def move_batch_to_device(self, batch: dict[str, Any]) -> dict[str, Any]:
         """
         Move all necessary tensors to the device.
 
@@ -219,7 +225,7 @@ class BaseTrainer:
             batch[tensor_for_device] = batch[tensor_for_device].to(self.device)
         return batch
 
-    def _clip_grad_norm(self):
+    def _clip_grad_norm(self) -> None:
         """
         Clips the gradient norm by the value defined in
         config.trainer.max_grad_norm
@@ -230,7 +236,7 @@ class BaseTrainer:
             )
 
     @torch.no_grad()
-    def _get_grad_norm(self, norm_type=2):
+    def _get_grad_norm(self, norm_type: float = 2) -> float:
         """
         Calculates the gradient norm for logging.
 
@@ -252,7 +258,7 @@ class BaseTrainer:
         return total_norm.item()
 
     @abstractmethod
-    def _log_batch(self, batch_idx, batch, mode="train"):
+    def _log_batch(self, batch_idx: int, batch: dict[str, Any], mode: str = "train") -> None:
         """
         Abstract method. Should be defined in the nested Trainer Class.
 
@@ -284,7 +290,7 @@ class BaseTrainer:
                 f"{mode}/{metric_name}", metric_tracker.avg(metric_name), step
             )
 
-    def _save_checkpoint(self, epoch):
+    def _save_checkpoint(self, epoch: int) -> None:
         """
         Save the checkpoint.
 

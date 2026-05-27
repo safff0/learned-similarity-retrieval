@@ -1,3 +1,5 @@
+from typing import Any
+
 from src.metrics.tracker import MetricTracker
 from src.trainer.base_trainer import BaseTrainer
 
@@ -7,7 +9,7 @@ class Trainer(BaseTrainer):
     Trainer class. Defines the logic of batch logging and processing.
     """
 
-    def process_batch(self, batch, metrics: MetricTracker):
+    def process_batch(self, batch: dict[str, Any], metrics: MetricTracker) -> dict[str, Any]:
         """
         Run batch through the model, compute metrics, compute loss,
         and do training step (during training stage).
@@ -49,7 +51,7 @@ class Trainer(BaseTrainer):
             metrics.update(met.name, met(**batch))
         return batch
 
-    def _log_batch(self, batch_idx, batch, mode="train"):
+    def _log_batch(self, batch_idx: int, batch: dict[str, Any], mode: str = "train") -> None:
         """
         Log data from batch. Calls self.writer.add_* to log data
         to the experiment tracker.
