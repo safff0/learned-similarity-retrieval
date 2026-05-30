@@ -15,7 +15,6 @@ def collate_fn(dataset_items: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         result_batch (dict[Tensor]): dict, containing batch-version
             of the tensors.
     """
-
     result_batch = {}
 
     # example of collate_fn

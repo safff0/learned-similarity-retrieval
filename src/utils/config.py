@@ -29,20 +29,12 @@ class DataConfig:
             "train": DatasetPartitionConfig(
                 name="ExampleDataset",
                 partition="train",
-                params={
-                    "input_length": 1024,
-                    "n_classes": 10,
-                    "dataset_length": 100,
-                },
+                params={},
             ),
             "val": DatasetPartitionConfig(
                 name="ExampleDataset",
                 partition="val",
-                params={
-                    "input_length": 1024,
-                    "n_classes": 10,
-                    "dataset_length": 50,
-                },
+                params={},
             ),
         }
     )

@@ -1,16 +1,16 @@
 import logging
-from typing import Any
 from enum import StrEnum
 from pathlib import Path
 from dataclasses import dataclass
 
 import pandas as pd
 import requests
+import torch
 from tqdm.auto import tqdm
 
-from src.datasets.base_dataset import BaseDataset
+from src.datasets.base_dataset import BaseDataset, UserHistoryItem
 from src.registry import register
-from src.utils.io_utils import ROOT_PATH, read_json, write_json, unzip_archive
+from src.utils.io_utils import unzip_archive
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ class MovieLensItem:
     user_id: int
     history: list[MovieLensRating]
     target_movie: int | None = None
+    target_feedback: int | None = None
     timestamp: int | None = None
 
 
@@ -98,6 +99,13 @@ class MovieLensDataset(BaseDataset):
             names=["movieId", "title", "genres"],
             encoding="latin-1",
         )
+        self._all_genres = sorted(set(self._movies["genres"].str.split("|").explode()))
+        self._genre_to_idx = {g: i for i, g in enumerate(self._all_genres)}
+        genre_onehot = self._movies["genres"].str.get_dummies(sep="|")[self._all_genres]
+        self._movie_features = dict(zip(
+            self._movies["movieId"].astype(int),
+            torch.from_numpy(genre_onehot.values).float(),
+        ))
         self._users = pd.read_csv(
             data_dir / "users.dat",
             sep="::",
@@ -134,6 +142,7 @@ class MovieLensDataset(BaseDataset):
             user_df = user_df.sort_values("timestamp")
             movie_ids = user_df["movieId"].astype(int).tolist()
             timestamps = user_df["timestamp"].astype(int).tolist()
+            ratings = user_df["rating"].astype(int).tolist()
             if len(movie_ids) < self._min_history_size + 1:
                 continue
 
@@ -145,10 +154,21 @@ class MovieLensDataset(BaseDataset):
                         user_id=int(user_idx),
                         history=history,
                         target_movie=int(target),
+                        target_feedback=int(ratings[i]),
                         timestamp=int(timestamps[i]),
                     )
                 )
         return index
 
-    def __getitem__(self, ind: int) -> MovieLensItem:
-        return self._index[ind]
+    def __getitem__(self, ind: int) -> UserHistoryItem:
+        item = self._index[ind]
+        history_ids = [e for e in item.history]
+        history_features = [self._movie_features[e] for e in item.history]
+        return UserHistoryItem(
+            user_id=item.user_id,
+            history_ids=history_ids,
+            history_features=history_features,
+            target=item.target_movie,
+            target_feedback=item.target_feedback,
+            timestamp=item.timestamp,
+        )

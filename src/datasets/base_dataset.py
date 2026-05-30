@@ -1,20 +1,27 @@
 import logging
 import random
-from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
 from torch.utils.data import Dataset
+from abc import abstractmethod
 
 logger = logging.getLogger(__name__)
 
 
-class BaseDataset(Dataset):
-    """
-    Base class for the datasets.
-    """
+@dataclass
+class UserHistoryItem:
+    user_id: int
+    history_ids: torch.Tensor           # item ids in user's history
+    history_features: torch.Tensor      # features of items in user's history
+    target: int | None = None           # next item in user's future history
+    target_feedback: int | None = None  # feedback if present
+    timestamp: int | None = None
 
+
+class BaseDataset(Dataset):
     def __init__(
         self,
         index: list[dict[str, Any]],
@@ -42,3 +49,7 @@ class BaseDataset(Dataset):
         if limit is not None:
             index = index[:limit]
         return index
+
+    @abstractmethod
+    def __getitem__(self, ind: int) -> UserHistoryItem:
+        pass

@@ -7,12 +7,11 @@ data:
         partition: train
         rating_threshold: 4
     val:
-      name: ExampleDataset
+      name: MovieLensDataset
       params:
-        partition: val
-        input_length: 1024
-        n_classes: 10
-        dataset_length: 50
+        variant: "ml-1m"
+        partition: train
+        rating_threshold: 4
   dataloader:
     batch_size: 10
     num_workers: 2
