@@ -11,7 +11,7 @@ class ObjectConfig:
 @dataclass
 class DatasetPartitionConfig:
     name: str = "ExampleDataset"
-    partition: str = "train"
+    partition:  str= "train"
     params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -43,37 +43,34 @@ class DataConfig:
 
 @dataclass
 class ModelConfig(ObjectConfig):
-    name: str = "BaselineModel"
+    name: str = field(default_factory=str)
     params: dict[str, Any] = field(
-        default_factory=lambda: {
-            "n_feats": 1024,
-            "fc_hidden": 512,
-            "n_class": 10,
-        }
+        default_factory=lambda: {}
     )
 
 
 @dataclass
 class OptimizerConfig(ObjectConfig):
-    name: str = "Adam"
+    name: str = field(default_factory=str)
     params: dict[str, Any] = field(
-        default_factory=lambda: {
-            "lr": 3.0e-4,
-        }
+        default_factory=lambda: {}
+    )
+
+
+@dataclass
+class MetricEntryConfig:
+    name: str = field(default_factory=str)
+    alias: str | None = None
+    params: dict[str, Any] = field(
+        default_factory=lambda: {}
     )
 
 
 @dataclass
 class MetricsConfig:
     device: str = "auto"
-
-    # Could be names only:
-    train: list[str] = field(default_factory=list)
-    inference: list[str] = field(default_factory=list)
-
-    # Or, if you later want metrics with params, use:
-    # train: list[ObjectConfig] = field(default_factory=list)
-    # inference: list[ObjectConfig] = field(default_factory=list)
+    train: list[MetricEntryConfig] = field(default_factory=list)
+    inference: list[MetricEntryConfig] = field(default_factory=list)
 
 
 @dataclass

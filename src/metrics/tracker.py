@@ -7,14 +7,25 @@ class MetricTracker:
     Class to aggregate metrics from many batches.
     """
 
-    def __init__(self, *keys: str, writer: SummaryWriter | None = None) -> None:
+    def __init__(
+        self,
+        *keys: str,
+        writer: SummaryWriter | None = None,
+    ) -> None:
         """
         Args:
-            *keys (list[str]): list (as positional arguments) of metric
-                names (may include the names of losses)
+            *keys (list[str]): metric identifiers — must be unique. For
+                user-defined metrics this is ``BaseMetric.alias``; loss
+                names and ``grad_norm`` use their own string.
             writer (SummaryWriter | None): experiment tracker. Not used in
                 this code version. Can be used to log metrics from each batch.
         """
+        duplicates = [k for k in set(keys) if keys.count(k) > 1]
+        if duplicates:
+            raise ValueError(
+                f"MetricTracker got duplicate keys {duplicates}. Set a distinct "
+                "`alias` on each metric in the config so they don't collide."
+            )
         self.writer = writer
         self._data = pd.DataFrame(index=keys, columns=["total", "counts", "average"])
         self.reset()
@@ -54,8 +65,7 @@ class MetricTracker:
         Return average value of each metric.
 
         Returns:
-            average_metrics (dict): dict, containing average metrics
-                for each metric name.
+            average_metrics (dict): dict mapping metric key to average value.
         """
         return dict(self._data.average)
 

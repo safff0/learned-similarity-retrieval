@@ -1,26 +1,46 @@
-from typing import Any
-
 import torch
+from torch.nn.utils.rnn import pad_sequence
+
+from src.datasets.base_dataset import UserHistoryBatch, UserHistoryItem
+
+PAD_ID = 0
 
 
-def collate_fn(dataset_items: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
-    """
-    Collate and pad fields in the dataset items.
-    Converts individual items into a batch.
-
-    Args:
-        dataset_items (list[dict]): list of objects from
-            dataset.__getitem__.
-    Returns:
-        result_batch (dict[Tensor]): dict, containing batch-version
-            of the tensors.
-    """
-    result_batch = {}
-
-    # example of collate_fn
-    result_batch["data_object"] = torch.vstack(
-        [elem["data_object"] for elem in dataset_items]
+def collate_fn(dataset_items: list[UserHistoryItem]) -> UserHistoryBatch:
+    history_ids = pad_sequence(
+        [it.history_ids for it in dataset_items],
+        batch_first=True,
+        padding_value=PAD_ID,
     )
-    result_batch["labels"] = torch.tensor([elem["labels"] for elem in dataset_items])
+    history_features = pad_sequence(
+        [it.history_features for it in dataset_items],
+        batch_first=True,
+        padding_value=0.0,
+    )
+    target = pad_sequence(
+        [it.target for it in dataset_items],
+        batch_first=True,
+        padding_value=PAD_ID,
+    )
+    target_feedback = pad_sequence(
+        [it.target_feedback for it in dataset_items],
+        batch_first=True,
+        padding_value=0,
+    )
+    loss_mask = pad_sequence(
+        [it.loss_mask for it in dataset_items],
+        batch_first=True,
+        padding_value=False,
+    )
+    mask = history_ids != PAD_ID
 
-    return result_batch
+    return UserHistoryBatch(
+        user_id=torch.tensor([it.user_id for it in dataset_items], dtype=torch.long),
+        history_ids=history_ids,
+        history_features=history_features,
+        target=target,
+        target_feedback=target_feedback,
+        mask=mask,
+        loss_mask=loss_mask,
+        timestamp=torch.tensor([it.timestamp for it in dataset_items], dtype=torch.long),
+    )

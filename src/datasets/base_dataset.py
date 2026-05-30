@@ -14,11 +14,24 @@ logger = logging.getLogger(__name__)
 @dataclass
 class UserHistoryItem:
     user_id: int
-    history_ids: torch.Tensor           # item ids in user's history
-    history_features: torch.Tensor      # features of items in user's history
-    target: int | None = None           # next item in user's future history
-    target_feedback: int | None = None  # feedback if present
+    history_ids: torch.Tensor                       # (L,) input ids = seq[:-1]
+    history_features: torch.Tensor                  # (L, F) features for inputs
+    target: torch.Tensor | None = None              # (L,) shifted next ids = seq[1:]
+    target_feedback: torch.Tensor | None = None     # (L,) shifted next ratings
+    loss_mask: torch.Tensor | None = None           # (L,) bool, True = score this target
     timestamp: int | None = None
+
+
+@dataclass
+class UserHistoryBatch:
+    user_id: torch.Tensor           # (B,)
+    history_ids: torch.Tensor       # (B, L_max)
+    history_features: torch.Tensor  # (B, L_max, F)
+    target: torch.Tensor            # (B, L_max)
+    target_feedback: torch.Tensor   # (B, L_max)
+    mask: torch.Tensor              # (B, L_max) bool, True = valid input (not padding)
+    loss_mask: torch.Tensor         # (B, L_max) bool, True = target counts toward loss/metrics
+    timestamp: torch.Tensor         # (B,)
 
 
 class BaseDataset(Dataset):

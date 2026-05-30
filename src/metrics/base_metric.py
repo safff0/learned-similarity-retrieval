@@ -7,17 +7,31 @@ class BaseMetric:
     Base class for all metrics
     """
 
-    def __init__(self, name: str | None = None, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        alias: str | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         """
         Args:
-            name (str | None): metric name to use in logger and writer.
+            alias (str | None): identifier used as the tracker key AND the
+                display label in logs/tensorboard. Must be unique across
+                metrics within the same stage. Defaults to the class name,
+                so multiple instances of the same metric class MUST set
+                distinct aliases via config (e.g. "HR@5", "HR@10").
         """
-        self.name = name if name is not None else type(self).__name__
+        self.alias = alias if alias is not None else type(self).__name__
 
     @abstractmethod
-    def __call__(self, **batch: Any) -> float:
+    def __call__(self, **batch: Any) -> tuple[float, int]:
         """
         Defines metric calculation logic for a given batch.
-        Can use external functions (like TorchMetrics) or custom ones.
+
+        Returns:
+            (value, n): the metric value AND the number of eval items
+                ``value`` was computed over. The tracker uses ``n`` to
+                weight the running mean so batches with different counts
+                of valid eval positions aggregate exactly.
         """
         raise NotImplementedError()

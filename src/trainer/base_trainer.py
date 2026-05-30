@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import dataclasses
 import logging
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
+from src.datasets.base_dataset import UserHistoryBatch
 from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
 from src.utils.config import Config
@@ -93,12 +95,12 @@ class BaseTrainer:
         self.train_metrics = MetricTracker(
             *self.config.trainer.loss_names,
             "grad_norm",
-            *[m.name for m in self.metrics["train"]],
+            *[m.alias for m in self.metrics["train"]],
             writer=self.writer,
         )
         self.evaluation_metrics = MetricTracker(
             *self.config.trainer.loss_names,
-            *[m.name for m in self.metrics["inference"]],
+            *[m.alias for m in self.metrics["inference"]],
             writer=self.writer,
         )
 
@@ -153,7 +155,7 @@ class BaseTrainer:
         for batch_idx, batch in enumerate(
             tqdm(self.train_dataloader, desc="train", total=self.epoch_len)
         ):
-            batch = self.process_batch(
+            batch, outputs = self.process_batch(
                 batch,
                 metrics=self.train_metrics,
             )
@@ -164,7 +166,7 @@ class BaseTrainer:
             if batch_idx % self.log_step == 0:
                 global_step = (epoch - 1) * self.epoch_len + batch_idx
                 self._log_scalars(self.train_metrics, "train", global_step)
-                self._log_batch(batch_idx, batch)
+                self._log_batch(batch_idx, batch, outputs)
                 # we don't want to reset train metrics at the start of every epoch
                 # because we are interested in recent train metrics
                 last_train_metrics = self.train_metrics.result()
@@ -201,30 +203,30 @@ class BaseTrainer:
                 desc=part,
                 total=len(dataloader),
             ):
-                batch = self.process_batch(
+                batch, outputs = self.process_batch(
                     batch,
                     metrics=self.evaluation_metrics,
                 )
             self._log_scalars(self.evaluation_metrics, part, epoch * self.epoch_len)
             self._log_batch(
-                batch_idx, batch, part
+                batch_idx, batch, outputs, part
             )  # log only the last batch during inference
 
         return self.evaluation_metrics.result()
 
-    def move_batch_to_device(self, batch: dict[str, Any]) -> dict[str, Any]:
+    def move_batch_to_device(self, batch: UserHistoryBatch) -> UserHistoryBatch:
         """
-        Move all necessary tensors to the device.
+        Move every tensor-valued field of the batch onto the trainer's device.
 
         Args:
-            batch (dict): dict-based batch containing the data from
-                the dataloader.
+            batch: UserHistoryBatch produced by the dataloader's collate_fn.
         Returns:
-            batch (dict): dict-based batch containing the data from
-                the dataloader with some of the tensors on the device.
+            batch: the same dataclass with its tensor fields on device.
         """
-        for tensor_for_device in self.cfg_trainer.device_tensors:
-            batch[tensor_for_device] = batch[tensor_for_device].to(self.device)
+        for f in dataclasses.fields(batch):
+            value = getattr(batch, f.name)
+            if isinstance(value, torch.Tensor):
+                setattr(batch, f.name, value.to(self.device))
         return batch
 
     def _clip_grad_norm(self) -> None:
@@ -232,10 +234,8 @@ class BaseTrainer:
         Clips the gradient norm by the value defined in
         config.trainer.max_grad_norm
         """
-        if self.config["trainer"].get("max_grad_norm", None) is not None:
-            clip_grad_norm_(
-                self.model.parameters(), self.config["trainer"]["max_grad_norm"]
-            )
+        if self.cfg_trainer.max_grad_norm is not None:
+            clip_grad_norm_(self.model.parameters(), self.cfg_trainer.max_grad_norm)
 
     @torch.no_grad()
     def _get_grad_norm(self, norm_type: float = 2) -> float:
@@ -260,7 +260,13 @@ class BaseTrainer:
         return total_norm.item()
 
     @abstractmethod
-    def _log_batch(self, batch_idx: int, batch: dict[str, Any], mode: str = "train") -> None:
+    def _log_batch(
+        self,
+        batch_idx: int,
+        batch: UserHistoryBatch,
+        outputs: dict[str, Any],
+        mode: str = "train",
+    ) -> None:
         """
         Abstract method. Should be defined in the nested Trainer Class.
 
@@ -269,8 +275,8 @@ class BaseTrainer:
 
         Args:
             batch_idx (int): index of the current batch.
-            batch (dict): dict-based batch after going through
-                the 'process_batch' function.
+            batch (UserHistoryBatch): batch after going through 'process_batch'.
+            outputs (dict): model outputs (loss + auxiliary tensors).
             mode (str): train or inference. Defines which logging
                 rules to apply.
         """
@@ -289,7 +295,9 @@ class BaseTrainer:
             return
         for metric_name in metric_tracker.keys():
             self.writer.add_scalar(
-                f"{mode}/{metric_name}", metric_tracker.avg(metric_name), step
+                f"{mode}/{metric_name}",
+                metric_tracker.avg(metric_name),
+                step,
             )
 
     def _save_checkpoint(self, epoch: int) -> None:

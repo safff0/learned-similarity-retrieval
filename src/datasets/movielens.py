@@ -47,10 +47,10 @@ class MovieLensRating:
 @dataclass
 class MovieLensItem:
     user_id: int
-    history: list[MovieLensRating]
-    target_movie: int | None = None
-    target_feedback: int | None = None
-    timestamp: int | None = None
+    movie_ids: list[int]        # chronological sequence kept for this user, len = L + 1
+    ratings: list[int]          # parallel to movie_ids
+    timestamps: list[int]       # parallel to movie_ids
+    is_post_split: list[bool]   # parallel to movie_ids; True iff item is val-target eligible
 
 
 @register("dataset")
@@ -61,8 +61,8 @@ class MovieLensDataset(BaseDataset):
         partition: str = "train",
         data_path: str | None = None,
         rating_threshold: int | None = None,
-        max_history_size: int = 64,
-        min_history_size: int = 2,
+        max_history_size: int = 200,
+        min_history_size: int = 5,
         val_part: float = 0.15,
     ) -> None:
         zip_path = self._download_dataset(variant, data_path)
@@ -83,14 +83,10 @@ class MovieLensDataset(BaseDataset):
         if rating_threshold:
             self._ratings = self._ratings[self._ratings["rating"] >= rating_threshold]
         self._ratings = self._ratings.sort_values(by="timestamp")
-        split_timestamp = (
+        self._split_timestamp = (
             val_part * self._ratings["timestamp"].max() +
             (1 - val_part) * self._ratings["timestamp"].min()
         )
-        if self._partition == "train":
-            self._ratings = self._ratings[self._ratings["timestamp"] < split_timestamp]
-        elif self._partition == "val":
-            self._ratings = self._ratings[self._ratings["timestamp"] >= split_timestamp]
 
         self._movies = pd.read_csv(
             data_dir / "movies.dat",
@@ -113,6 +109,7 @@ class MovieLensDataset(BaseDataset):
             names=["userId", "gender", "age", "occupation", "zipCode"],
         )
         self._index = self._build_index()
+        logger.info(f"Unique items: {self._movies.size}")
 
     def _build_download_url(self, variant: MovieLensVariant) -> str:
         return f"https://files.grouplens.org/datasets/movielens/{variant}.zip"
@@ -143,32 +140,50 @@ class MovieLensDataset(BaseDataset):
             movie_ids = user_df["movieId"].astype(int).tolist()
             timestamps = user_df["timestamp"].astype(int).tolist()
             ratings = user_df["rating"].astype(int).tolist()
-            if len(movie_ids) < self._min_history_size + 1:
-                continue
+            is_post_split = [ts >= self._split_timestamp for ts in timestamps]
 
-            for i in range(self._min_history_size, len(movie_ids)):
-                history = movie_ids[:i][-self._max_history_size :]
-                target = movie_ids[i]
-                index.append(
-                    MovieLensItem(
-                        user_id=int(user_idx),
-                        history=history,
-                        target_movie=int(target),
-                        target_feedback=int(ratings[i]),
-                        timestamp=int(timestamps[i]),
-                    )
+            if self._partition == "train":
+                keep = [i for i, post in enumerate(is_post_split) if not post]
+                if len(keep) < self._min_history_size + 1:
+                    continue
+                movie_ids = [movie_ids[i] for i in keep]
+                ratings = [ratings[i] for i in keep]
+                timestamps = [timestamps[i] for i in keep]
+                is_post_split = [False] * len(movie_ids)
+            else:
+                if not any(is_post_split):
+                    continue
+                if len(movie_ids) < self._min_history_size + 1:
+                    continue
+
+            cap = self._max_history_size + 1
+            index.append(
+                MovieLensItem(
+                    user_id=int(user_idx),
+                    movie_ids=movie_ids[-cap:],
+                    ratings=ratings[-cap:],
+                    timestamps=timestamps[-cap:],
+                    is_post_split=is_post_split[-cap:],
                 )
+            )
         return index
 
     def __getitem__(self, ind: int) -> UserHistoryItem:
         item = self._index[ind]
-        history_ids = [e for e in item.history]
-        history_features = [self._movie_features[e] for e in item.history]
+        ids = item.movie_ids
+        input_ids = torch.tensor(ids[:-1], dtype=torch.long)
+        target_ids = torch.tensor(ids[1:], dtype=torch.long)
+        target_feedback = torch.tensor(item.ratings[1:], dtype=torch.long)
+        history_features = torch.stack([self._movie_features[mid] for mid in ids[:-1]])
+        loss_mask = torch.tensor(item.is_post_split[1:], dtype=torch.bool)
+        if self._partition == "train":
+            loss_mask = torch.ones_like(loss_mask)
         return UserHistoryItem(
             user_id=item.user_id,
-            history_ids=history_ids,
+            history_ids=input_ids,
             history_features=history_features,
-            target=item.target_movie,
-            target_feedback=item.target_feedback,
-            timestamp=item.timestamp,
+            target=target_ids,
+            target_feedback=target_feedback,
+            loss_mask=loss_mask,
+            timestamp=item.timestamps[-1],
         )

@@ -1,48 +1,76 @@
-from typing import Any
-
 import torch
 from torch import nn, Tensor
-from torch.nn import Sequential, functional as F
+from torch.nn import functional as F
 
 from src.registry import register
+from src.model.base_model import BaseModel
+from src.datasets.base_dataset import UserHistoryBatch
 
 
 @register("model")
-class SASRec(nn.Module):
-    def __init__(self, n_feats: int, n_class: int, fc_hidden: int = 512) -> None:
+class SASRec(BaseModel):
+    def __init__(
+        self,
+        item_count: int,
+        max_history_size: int,
+        embedding_dim: int,
+        tabular_dim: int = 0,
+        attn_n_layers: int = 2,
+        attn_n_head: int = 2,
+        attn_dim_feedforward: int = 128,
+        attn_dropout: float = 0.1,
+    ) -> None:
         super().__init__()
-        # TODO
+        self._embedding_dim = embedding_dim
+        self._tabular_dim = tabular_dim
+        self._model_dim = embedding_dim + tabular_dim
 
-    def forward(self, data_object: Tensor, labels: Tensor | None = None, **batch: Any) -> dict[str, Tensor]:
-        """
-        Model forward method.
+        self._embedding = nn.Embedding(item_count, embedding_dim, padding_idx=0)
+        self._pos_embedding = nn.Embedding(max_history_size, embedding_dim)
 
-        Returns logits and (when labels are present) cross-entropy loss.
-        This template has no separate criterion module, so the model is
-        responsible for populating ``loss`` in its output dict.
-
-        Args:
-            data_object (Tensor): input vector.
-            labels (Tensor | None): ground-truth labels.
-        Returns:
-            output (dict): {"logits": ..., "loss": ...} (loss omitted if no labels).
-        """
-        logits = self.net(data_object)
-        out = {"logits": logits}
-        if labels is not None:
-            out["loss"] = F.cross_entropy(logits, labels)
-        return out
-
-    def __str__(self) -> str:
-        """
-        Model prints with the number of parameters.
-        """
-        all_parameters = sum([p.numel() for p in self.parameters()])
-        trainable_parameters = sum(
-            [p.numel() for p in self.parameters() if p.requires_grad]
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self._model_dim,
+            nhead=attn_n_head,
+            dim_feedforward=attn_dim_feedforward,
+            dropout=attn_dropout,
+            batch_first=True,
+            norm_first=True,
+        )
+        self._encoder = nn.TransformerEncoder(encoder_layer, num_layers=attn_n_layers)
+        self._out_proj: nn.Module = (
+            nn.Linear(self._model_dim, embedding_dim) if tabular_dim > 0 else nn.Identity()
         )
 
-        result_info = super().__str__()
-        result_info = result_info + f"\nAll parameters: {all_parameters}"
-        result_info = result_info + f"\nTrainable parameters: {trainable_parameters}"
-        return result_info
+    def forward(self, batch: UserHistoryBatch) -> dict[str, Tensor]:
+        B, L = batch.history_ids.shape
+        device = batch.history_ids.device
+        item_emb = self._embedding(batch.history_ids)
+        positions = torch.arange(L, device=device).expand(B, L)
+        x = item_emb + self._pos_embedding(positions)
+        if self._tabular_dim > 0:
+            x = torch.cat([x, batch.history_features], dim=-1)
+
+        causal_mask = torch.triu(
+            torch.full((L, L), float("-inf"), device=device), diagonal=1,
+        )
+        key_padding_mask = ~batch.mask
+        hidden = self._encoder(
+            x,
+            mask=causal_mask,
+            src_key_padding_mask=key_padding_mask,
+            is_causal=True,
+        )
+        hidden = self._out_proj(hidden)
+        logits = hidden @ self._embedding.weight.T
+
+        out: dict[str, Tensor] = {"logits": logits}
+        if batch.target is not None:
+            out["targets"] = batch.target.flatten()
+            per_pos_loss = F.cross_entropy(
+                logits.flatten(0, 1),
+                batch.target.flatten(),
+                reduction="none",
+            )
+            m = batch.loss_mask.flatten().float()
+            out["loss"] = (per_pos_loss * m).sum() / m.sum().clamp(min=1.0)
+        return out

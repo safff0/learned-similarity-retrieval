@@ -1,0 +1,61 @@
+data:
+  partitions:
+    train:
+      name: MovieLensDataset
+      params:
+        variant: "ml-1m"
+        partition: train
+        max_history_size: 200
+    val:
+      name: MovieLensDataset
+      params:
+        variant: "ml-1m"
+        partition: val
+        max_history_size: 200
+  dataloader:
+    batch_size: 128
+    num_workers: 2
+    pin_memory: true
+
+model:
+  name: SASRec
+  params:
+    embedding_dim: 32
+    item_count: 11649
+    max_history_size: 200
+    attn_dropout: 0.2
+
+optimizer:
+  name: Adam
+  params:
+    lr: 1e-3
+
+metrics:
+  device: auto
+  train:
+    - name: Hitrate
+      params:
+        alias: "hitrate@10"
+        k: 10
+    - name: Hitrate
+      params:
+        alias: "hitrate@25"
+        k: 25
+    - name: Hitrate
+      params:
+        alias: "hitrate@50"
+        k: 50
+  inference: []
+
+trainer:
+  device: auto
+  seed: 1
+  n_epochs: 100
+  epoch_len: null
+  log_step: 50
+  save_period: 5
+  save_dir: ./saved/sasrec
+  tb_dir: ./runs/sasrec
+  device_tensors: [data_object, labels]
+  loss_names: [loss]
+  max_grad_norm: null
