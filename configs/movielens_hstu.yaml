@@ -33,18 +33,21 @@ optimizer:
 metrics:
   device: auto
   train:
-    - name: Hitrate
+    - name: HitrateNegatives
       params:
         alias: "hitrate@10"
         k: 10
-    - name: Hitrate
+        n_negatives: 100
+    - name: HitrateNegatives
       params:
         alias: "hitrate@25"
         k: 25
-    - name: Hitrate
+        n_negatives: 100
+    - name: HitrateNegatives
       params:
         alias: "hitrate@50"
         k: 50
+        n_negatives: 100
   inference: []
 
 trainer:
@@ -54,8 +57,8 @@ trainer:
   epoch_len: null
   log_step: 50
   save_period: 5
-  save_dir: ./saved/sasrec
-  tb_dir: ./runs/sasrec
+  save_dir: ./saved/hstu
+  tb_dir: ./runs/hstu
   device_tensors: [data_object, labels]
   loss_names: [loss]
   max_grad_norm: null
