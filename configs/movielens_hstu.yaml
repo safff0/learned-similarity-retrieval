@@ -21,7 +21,6 @@ model:
   name: HSTU
   params:
     embedding_dim: 50
-    item_count: 11649
     max_history_size: 200
     attn_dropout: 0.2
 

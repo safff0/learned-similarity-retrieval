@@ -6,6 +6,7 @@ from src.registry import register
 from src.model.base_model import BaseModel
 from src.datasets.base_dataset import UserHistoryBatch
 
+
 class HSTUBlock(nn.Module):
     def __init__(
         self,

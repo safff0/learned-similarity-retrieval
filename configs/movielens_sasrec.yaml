@@ -3,25 +3,24 @@ data:
     train:
       name: MovieLensDataset
       params:
-        variant: "ml-1m"
+        variant: "ml-20m"
         partition: train
         max_history_size: 200
     val:
       name: MovieLensDataset
       params:
-        variant: "ml-1m"
+        variant: "ml-20m"
         partition: val
         max_history_size: 200
   dataloader:
-    batch_size: 128
+    batch_size: 16
     num_workers: 2
     pin_memory: true
 
 model:
   name: SASRec
   params:
-    embedding_dim: 32
-    item_count: 11649
+    embedding_dim: 50
     max_history_size: 200
     attn_dropout: 0.2
 
@@ -33,18 +32,21 @@ optimizer:
 metrics:
   device: auto
   train:
-    - name: Hitrate
+    - name: HitrateNegatives
       params:
         alias: "hitrate@10"
         k: 10
-    - name: Hitrate
+        n_negatives: 100
+    - name: HitrateNegatives
       params:
         alias: "hitrate@25"
         k: 25
-    - name: Hitrate
+        n_negatives: 100
+    - name: HitrateNegatives
       params:
         alias: "hitrate@50"
         k: 50
+        n_negatives: 100
   inference: []
 
 trainer:

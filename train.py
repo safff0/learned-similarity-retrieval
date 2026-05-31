@@ -4,6 +4,7 @@ import logging
 
 from omegaconf import OmegaConf
 from torch.utils.tensorboard import SummaryWriter
+import torch
 
 import src.datasets  # noqa: F401 — triggers @register decorators
 import src.metrics  # noqa: F401
@@ -24,6 +25,7 @@ def main() -> None:
     Main training entrypoint. Loads the YAML config (with CLI dot overrides),
     builds the model / optimizer / metrics / dataloaders, and runs Trainer.
     """
+    torch.cuda.empty_cache()
     init_logging()
     config = load_config(sys.argv[1:])
 
@@ -33,8 +35,9 @@ def main() -> None:
     dataloaders = get_dataloaders(config, device)
     logger.info("loaded datasets")
 
+    config.model.params["item_count"] = dataloaders["train"].dataset.item_count
     model = build("model", config.model).to(device)
-    logger.info(f"loaded model: {config.model.name}")
+    logger.info(f"loaded model: {config.model.name} (item_count={config.model.params['item_count']})")
 
     metrics = build_metrics(config)
 

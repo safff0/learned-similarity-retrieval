@@ -18,7 +18,7 @@ class SASRec(BaseModel):
         attn_n_layers: int = 2,
         attn_n_head: int = 2,
         attn_dim_feedforward: int = 128,
-        attn_dropout: float = 0.1,
+        attn_dropout: float = 0.2,
     ) -> None:
         super().__init__()
         self._embedding_dim = embedding_dim
