@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 class UserHistoryItem:
     user_id: int
     history_ids: torch.Tensor                       # (L,) input ids = seq[:-1]
+    history_ratings: torch.Tensor                  # (L,) input ratings aligned with history_ids
+    history_timestamps: torch.Tensor               # (L,) input timestamps aligned with history_ids
     history_features: torch.Tensor                  # (L, F) features for inputs
     target: torch.Tensor | None = None              # (L,) shifted next ids = seq[1:]
     target_feedback: torch.Tensor | None = None     # (L,) shifted next ratings
@@ -26,6 +28,8 @@ class UserHistoryItem:
 class UserHistoryBatch:
     user_id: torch.Tensor           # (B,)
     history_ids: torch.Tensor       # (B, L_max)
+    history_ratings: torch.Tensor   # (B, L_max)
+    history_timestamps: torch.Tensor  # (B, L_max)
     history_features: torch.Tensor  # (B, L_max, F)
     target: torch.Tensor            # (B, L_max)
     target_feedback: torch.Tensor   # (B, L_max)

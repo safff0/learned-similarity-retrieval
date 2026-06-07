@@ -76,6 +76,9 @@ def resolve_device(name: str) -> str:
     if name == "mps" and not torch.mps.is_available():
         logger.warning("mps requested but unavailable; falling back to cpu")
     logger.info(f"torch device resolved to [{result}]")
+    if result == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     return result
 
 

@@ -53,7 +53,7 @@ class Trainer(BaseTrainer):
         # Flatten batch + outputs so metrics receive a single **kwargs dict.
         # ``vars(batch)`` is a shallow view of the dataclass fields — no copy.
         # Outputs override batch on key collision.
-        flat = {**vars(batch), **outputs}
+        flat = {**vars(batch), **outputs, "model": self.model}
         for met in metric_funcs:
             value, n = met(**flat)
             if n > 0:

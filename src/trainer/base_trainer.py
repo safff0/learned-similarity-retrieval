@@ -86,6 +86,7 @@ class BaseTrainer:
         self.epochs = self.cfg_trainer.n_epochs
 
         self.save_period = self.cfg_trainer.save_period
+        self.eval_period = self.cfg_trainer.eval_period
 
         # setup visualization writer instance
         self.writer = writer
@@ -176,10 +177,11 @@ class BaseTrainer:
 
         logs = dict(last_train_metrics)
 
-        # Run val/test
-        for part, dataloader in self.evaluation_dataloaders.items():
-            val_logs = self._evaluation_epoch(epoch, part, dataloader)
-            logs.update(**{f"{part}_{name}": value for name, value in val_logs.items()})
+        # Run val/test periodically because full-catalog retrieval can dominate wall-clock.
+        if epoch % self.eval_period == 0:
+            for part, dataloader in self.evaluation_dataloaders.items():
+                val_logs = self._evaluation_epoch(epoch, part, dataloader)
+                logs.update(**{f"{part}_{name}": value for name, value in val_logs.items()})
 
         return logs
 
@@ -197,6 +199,8 @@ class BaseTrainer:
         self.is_train = False
         self.model.eval()
         self.evaluation_metrics.reset()
+        for met in self.metrics["inference"]:
+            met.prepare(model=self.model, part=part)
         with torch.no_grad():
             for batch_idx, batch in tqdm(
                 enumerate(dataloader),
@@ -211,6 +215,8 @@ class BaseTrainer:
             self._log_batch(
                 batch_idx, batch, outputs, part
             )  # log only the last batch during inference
+        for met in self.metrics["inference"]:
+            met.cleanup(model=self.model, part=part)
 
         return self.evaluation_metrics.result()
 
