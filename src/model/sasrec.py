@@ -23,11 +23,7 @@ class SASRec(BaseModel):
         attn_n_layers: int = 2,
         attn_n_head: int = 2,
         attn_dim_feedforward: int = 128,
-        attn_dropout: float = 0.1,
-        use_mol: bool = False,
-        mol: dict | None = None,
-        mol_runtime: dict | None = None,
-        dot_loss_weight: float = 1.0,
+        attn_dropout: float = 0.2,
     ) -> None:
         super().__init__()
         mol_cfg = resolve_mol_head_params(mol)
