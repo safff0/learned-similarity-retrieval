@@ -20,8 +20,9 @@ data:
 model:
   name: HSTU
   params:
-    embedding_dim: 50
+    item_count: 11649
     max_history_size: 200
+    embedding_dim: 50
     attn_dropout: 0.2
 
 optimizer:
@@ -31,23 +32,26 @@ optimizer:
 
 metrics:
   device: auto
-  train:
-    - name: HitrateNegatives
+  train: []
+  inference:
+    - name: HitrateFull
       params:
-        alias: "hitrate@10"
+        alias: "hitrate_full@10"
         k: 10
-        n_negatives: 100
-    - name: HitrateNegatives
+        last_only: true
+        filter_history: false
+    - name: HitrateFull
       params:
-        alias: "hitrate@25"
+        alias: "hitrate_full@25"
         k: 25
-        n_negatives: 100
-    - name: HitrateNegatives
+        last_only: true
+        filter_history: false
+    - name: HitrateFull
       params:
-        alias: "hitrate@50"
+        alias: "hitrate_full@50"
         k: 50
-        n_negatives: 100
-  inference: []
+        last_only: true
+        filter_history: false
 
 trainer:
   device: auto

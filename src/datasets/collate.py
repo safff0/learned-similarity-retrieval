@@ -12,6 +12,16 @@ def collate_fn(dataset_items: list[UserHistoryItem]) -> UserHistoryBatch:
         batch_first=True,
         padding_value=PAD_ID,
     )
+    history_ratings = pad_sequence(
+        [it.history_ratings for it in dataset_items],
+        batch_first=True,
+        padding_value=0,
+    )
+    history_timestamps = pad_sequence(
+        [it.history_timestamps for it in dataset_items],
+        batch_first=True,
+        padding_value=0,
+    )
     history_features = pad_sequence(
         [it.history_features for it in dataset_items],
         batch_first=True,
@@ -37,6 +47,8 @@ def collate_fn(dataset_items: list[UserHistoryItem]) -> UserHistoryBatch:
     return UserHistoryBatch(
         user_id=torch.tensor([it.user_id for it in dataset_items], dtype=torch.long),
         history_ids=history_ids,
+        history_ratings=history_ratings,
+        history_timestamps=history_timestamps,
         history_features=history_features,
         target=target,
         target_feedback=target_feedback,

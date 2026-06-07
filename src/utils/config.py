@@ -79,6 +79,7 @@ class TrainerConfig:
     seed: int = 1
     n_epochs: int = 10
     epoch_len: int | None = None
+    eval_period: int = 1
     log_step: int = 50
     save_period: int = 5
     save_dir: str = "./saved/default"
