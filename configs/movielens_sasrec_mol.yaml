@@ -26,9 +26,11 @@ model:
     max_history_size: 200
     embedding_dim: 50
     attn_n_layers: 2
-    attn_n_head: 2
-    attn_dim_feedforward: 200
+    attn_n_head: 1
+    attn_dim_feedforward: 50
     attn_dropout: 0.2
+    input_dropout: 0.2
+    user_embedding_norm: "layer_norm"
     use_mol: true
     dot_loss_weight: 0.0
     mol:
@@ -41,7 +43,7 @@ model:
       eps: 1.0e-6
       autocast_bf16: true
       num_train_negatives: 128
-      query_chunk_size: 64
+      query_chunk_size: 10000
       softmax_temperature: 1.0
       query_dropout_rate: 0.0
       query_hidden_dim: 512
@@ -68,7 +70,7 @@ optimizer:
   name: AdamW
   params:
     lr: 1e-3
-    weight_decay: 1e-3
+    weight_decay: 0.0
 
 metrics:
   device: auto

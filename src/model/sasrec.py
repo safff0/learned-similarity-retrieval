@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
@@ -16,6 +18,17 @@ from src.model.similarity_heads import (
 from src.datasets.base_dataset import UserHistoryBatch
 
 
+def _truncated_normal(x: Tensor, mean: float = 0.0, std: float = 0.02) -> Tensor:
+    with torch.no_grad():
+        size = x.shape
+        tmp = x.new_empty(size + (4,)).normal_()
+        valid = (tmp < 2) & (tmp > -2)
+        ind = valid.max(-1, keepdim=True)[1]
+        x.copy_(tmp.gather(-1, ind).squeeze(-1))
+        x.mul_(std).add_(mean)
+        return x
+
+
 @register("model")
 class SASRec(BaseModel):
     def __init__(
@@ -32,9 +45,11 @@ class SASRec(BaseModel):
         similarity_runtime: dict | None = None,
         dot_loss_weight: float = 1.0,
         attn_n_layers: int = 2,
-        attn_n_head: int = 2,
-        attn_dim_feedforward: int = 128,
+        attn_n_head: int = 1,
+        attn_dim_feedforward: int = 50,
         attn_dropout: float = 0.1,
+        input_dropout: float = 0.2,
+        user_embedding_norm: str = "layer_norm",
     ) -> None:
         super().__init__()
         mol_cfg = resolve_mol_head_params(mol)
@@ -56,6 +71,8 @@ class SASRec(BaseModel):
         self._similarity_loss_weight = runtime_cfg["loss_weight"]
         self._similarity_mi_loss_weight = runtime_cfg["mi_loss_weight"] or 0.0
         self._similarity_uid_l2_weight = runtime_cfg["uid_embedding_l2_weight"]
+        self._user_embedding_norm = user_embedding_norm
+        self._input_dropout = nn.Dropout(input_dropout)
 
         self._embedding = nn.Embedding(item_count, embedding_dim, padding_idx=0)
         self._pos_embedding = nn.Embedding(max_history_size, embedding_dim)
@@ -69,6 +86,7 @@ class SASRec(BaseModel):
             norm_first=True,
         )
         self._encoder = nn.TransformerEncoder(encoder_layer, num_layers=attn_n_layers)
+        self._final_norm = nn.LayerNorm(self._model_dim)
         self._out_proj: nn.Module = (
             nn.Linear(self._model_dim, embedding_dim) if tabular_dim > 0 else nn.Identity()
         )
@@ -89,15 +107,27 @@ class SASRec(BaseModel):
                 embedding_dim=embedding_dim,
                 item_count=item_count,
             )
+        self.reset_params()
+
+    def reset_params(self) -> None:
+        _truncated_normal(self._embedding.weight, mean=0.0, std=0.02)
+        with torch.no_grad():
+            self._embedding.weight[0].zero_()
+        _truncated_normal(
+            self._pos_embedding.weight,
+            mean=0.0,
+            std=1.0 / math.sqrt(self._embedding_dim),
+        )
 
     def forward(self, batch: UserHistoryBatch) -> dict[str, Tensor]:
         B, L = batch.history_ids.shape
         device = batch.history_ids.device
         item_emb = self._embedding(batch.history_ids)
         positions = torch.arange(L, device=device).expand(B, L)
-        x = item_emb + self._pos_embedding(positions)
+        x = item_emb * math.sqrt(self._embedding_dim) + self._pos_embedding(positions)
         if self._tabular_dim > 0:
             x = torch.cat([x, batch.history_features], dim=-1)
+        x = self._input_dropout(x)
 
         causal_mask = torch.triu(
             torch.full((L, L), float("-inf"), device=device), diagonal=1,
@@ -109,12 +139,25 @@ class SASRec(BaseModel):
             src_key_padding_mask=key_padding_mask,
             is_causal=True,
         )
+        hidden = self._final_norm(hidden)
         hidden = self._out_proj(hidden)
+        if self._user_embedding_norm == "layer_norm":
+            hidden = F.layer_norm(hidden, normalized_shape=(hidden.size(-1),))
+        elif self._user_embedding_norm == "l2":
+            hidden = F.normalize(hidden, p=2, dim=-1)
+        elif self._user_embedding_norm != "none":
+            raise ValueError(f"Unknown user_embedding_norm: {self._user_embedding_norm}")
         logits = hidden @ self._embedding.weight.T
 
         out: dict[str, Tensor] = {"logits": logits}
         if self._use_mol or self._use_similarity_head:
             out["retrieval_queries"] = hidden
+            if not self.training:
+                last_history_idx = batch.mask.sum(dim=1).long() - 1
+                out["next_retrieval_queries"] = hidden[
+                    torch.arange(hidden.size(0), device=hidden.device),
+                    last_history_idx,
+                ]
         if batch.target is not None:
             out["targets"] = batch.target.flatten()
             total_loss = hidden.new_zeros(())

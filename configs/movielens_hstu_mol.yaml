@@ -49,7 +49,7 @@ model:
       eps: 1.0e-6
       autocast_bf16: true
       num_train_negatives: 128
-      query_chunk_size: 64
+      query_chunk_size: 10000
       softmax_temperature: 1.0
       query_dropout_rate: 0.0
       query_hidden_dim: 512
