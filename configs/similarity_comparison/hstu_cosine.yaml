@@ -1,0 +1,129 @@
+data:
+  partitions:
+    train:
+      name: MovieLensDataset
+      params:
+        variant: ml-1m
+        partition: train
+        max_history_size: 200
+        split_strategy: leave_one_out
+    val:
+      name: MovieLensDataset
+      params:
+        variant: ml-1m
+        partition: val
+        max_history_size: 200
+        split_strategy: leave_one_out
+  dataloader:
+    batch_size: 128
+    num_workers: 2
+    pin_memory: true
+model:
+  name: HSTU
+  params:
+    item_count: 3707
+    max_history_size: 200
+    embedding_dim: 50
+    rating_embedding_dim: 16
+    num_ratings: 6
+    attn_n_layers: 8
+    attn_n_head: 2
+    attn_dropout: 0.0
+    attn_linear_dropout: 0.2
+    attn_attention_dim: 25
+    attn_linear_dim: 25
+    attn_linear_activation: silu
+    input_dropout: 0.2
+    output_postproc: ln
+    enable_relative_attention_bias: true
+    use_mol: false
+    dot_loss_weight: 0.0
+    mol:
+      dot_product_dimension: 64
+      query_groups: 8
+      item_groups: 4
+      temperature: 0.05
+      dot_product_l2_norm: true
+      gating_combination_type: glu_silu
+      eps: 1.0e-06
+      autocast_bf16: true
+      num_train_negatives: 128
+      query_chunk_size: 64
+      softmax_temperature: 1.0
+      query_dropout_rate: 0.0
+      query_hidden_dim: 512
+      uid_embedding_hash_sizes:
+      - 6040
+      uid_dropout_rate: 0.5
+      item_dropout_rate: 0.1
+      item_hidden_dim: 0
+      query_nonlinearity: swiglu
+      item_nonlinearity: swiglu
+      gating_query_hidden_dim: 128
+      gating_item_hidden_dim: 128
+      gating_qi_hidden_dim: 128
+      gating_query_fn: true
+      gating_item_fn: true
+      gating_item_dropout_rate: 0.0
+      gating_qi_dropout_rate: 0.0
+      softmax_dropout_rate: 0.2
+    mol_runtime:
+      mi_loss_weight: 0.001
+      uid_embedding_l2_weight: 0.1
+      loss_weight: 1.0
+    use_similarity_head: true
+    similarity_head:
+      name: cosine
+      params: {}
+    similarity_runtime:
+      loss_weight: 1.0
+      mi_loss_weight: 0.0
+      uid_embedding_l2_weight: 0.0
+optimizer:
+  name: AdamW
+  params:
+    lr: 0.001
+    weight_decay: 0.001
+metrics:
+  device: auto
+  train: []
+  inference:
+  - name: HitrateMoL
+    params:
+      alias: hitrate_mol@50
+      k: 50
+      last_only: true
+      filter_history: false
+  - name: HitrateMoL
+    params:
+      alias: hitrate_mol@10
+      k: 10
+      last_only: true
+      filter_history: false
+  - name: HitrateMoL
+    params:
+      alias: hitrate_mol@1
+      k: 1
+      last_only: true
+      filter_history: false
+  - name: MRRMoL
+    params:
+      alias: mrr_mol
+      last_only: true
+      filter_history: false
+trainer:
+  device: auto
+  seed: 1
+  n_epochs: 25
+  epoch_len: null
+  eval_period: 5
+  log_step: 50
+  save_period: 25
+  save_dir: ./saved/similarity_comparison/hstu_cosine
+  tb_dir: ./runs/similarity_comparison/hstu_cosine
+  device_tensors:
+  - data_object
+  - labels
+  loss_names:
+  - loss
+  max_grad_norm: null
