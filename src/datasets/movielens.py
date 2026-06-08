@@ -76,10 +76,11 @@ class MovieLensDataset(BaseDataset):
         self._partition = partition
         self._split_strategy = split_strategy
 
-        self._ratings = self._read_table(
-            data_dir,
-            "ratings",
-            dat_columns=["userId", "movieId", "rating", "timestamp"],
+        self._ratings = pd.read_csv(
+            data_dir / "ratings.dat",
+            sep="::",
+            engine="python",
+            names=["userId", "movieId", "rating", "timestamp"],
         )
         if rating_threshold:
             self._ratings = self._ratings[self._ratings["rating"] >= rating_threshold]
@@ -89,11 +90,12 @@ class MovieLensDataset(BaseDataset):
             (1 - val_part) * self._ratings["timestamp"].min()
         )
 
-        self._movies = self._read_table(
-            data_dir,
-            "movies",
-            dat_columns=["movieId", "title", "genres"],
-            dat_encoding="latin-1",
+        self._movies = pd.read_csv(
+            data_dir / "movies.dat",
+            sep="::",
+            engine="python",
+            names=["movieId", "title", "genres"],
+            encoding="latin-1",
         )
         rated_movie_ids = sorted(self._ratings["movieId"].astype(int).unique().tolist())
         self._movie_id_to_local_id = {movie_id: i + 1 for i, movie_id in enumerate(rated_movie_ids)}
@@ -105,44 +107,19 @@ class MovieLensDataset(BaseDataset):
             self._movies["movieId"].astype(int),
             torch.from_numpy(genre_onehot.values).float(),
         ))
-        self._users = self._read_table(
-            data_dir,
-            "users",
-            dat_columns=["userId", "gender", "age", "occupation", "zipCode"],
-            required=False,
+        self._movie_features = {
+            local_id: raw_movie_features[movie_id]
+            for movie_id, local_id in self._movie_id_to_local_id.items()
+        }
+        self._users = pd.read_csv(
+            data_dir / "users.dat",
+            sep="::",
+            engine="python",
+            names=["userId", "gender", "age", "occupation", "zipCode"],
         )
         self._all_item_ids = list(range(1, len(self._movie_id_to_local_id) + 1))
         self._index = self._build_index()
-
-    @property
-    def item_count(self) -> int:
-        return int(self._movies["movieId"].astype(int).max()) + 1
-
-    def _read_table(
-        self,
-        data_dir: Path,
-        name: str,
-        dat_columns: list[str],
-        dat_encoding: str = "utf-8",
-        required: bool = True,
-    ) -> pd.DataFrame | None:
-        csv_path = data_dir / f"{name}.csv"
-        dat_path = data_dir / f"{name}.dat"
-        if csv_path.exists():
-            return pd.read_csv(csv_path)
-        if dat_path.exists():
-            return pd.read_csv(
-                dat_path,
-                sep="::",
-                engine="python",
-                names=dat_columns,
-                encoding=dat_encoding,
-            )
-        if required:
-            raise FileNotFoundError(
-                f"Neither {csv_path} nor {dat_path} exists for variant {self._variant}"
-            )
-        return None
+        logger.info("Unique rated items: %s", len(self._all_item_ids))
 
     def _build_download_url(self, variant: MovieLensVariant) -> str:
         return f"https://files.grouplens.org/datasets/movielens/{variant}.zip"

@@ -6,12 +6,14 @@ data:
         variant: "ml-1m"
         partition: train
         max_history_size: 200
+        val_part: 0.15
     val:
       name: MovieLensDataset
       params:
         variant: "ml-1m"
         partition: val
         max_history_size: 200
+        val_part: 0.15
   dataloader:
     batch_size: 128
     num_workers: 2
@@ -20,20 +22,31 @@ data:
 model:
   name: HSTU
   params:
-    item_count: 11649
+    item_count: 3707
     max_history_size: 200
     embedding_dim: 50
+    attn_n_layers: 8
+    attn_n_head: 2
     attn_dropout: 0.2
+    use_similarity_head: false
+    dot_loss_weight: 1.0
 
 optimizer:
   name: AdamW
   params:
     lr: 1e-3
+    weight_decay: 1e-3
 
 metrics:
   device: auto
   train: []
   inference:
+    - name: HitrateFull
+      params:
+        alias: "hitrate_full@50"
+        k: 50
+        last_only: true
+        filter_history: false
     - name: HitrateFull
       params:
         alias: "hitrate_full@10"
@@ -42,14 +55,8 @@ metrics:
         filter_history: false
     - name: HitrateFull
       params:
-        alias: "hitrate_full@25"
-        k: 25
-        last_only: true
-        filter_history: false
-    - name: HitrateFull
-      params:
-        alias: "hitrate_full@50"
-        k: 50
+        alias: "hitrate_full@1"
+        k: 1
         last_only: true
         filter_history: false
 
@@ -58,6 +65,7 @@ trainer:
   seed: 1
   n_epochs: 100
   epoch_len: null
+  eval_period: 5
   log_step: 50
   save_period: 5
   save_dir: ./saved/hstu

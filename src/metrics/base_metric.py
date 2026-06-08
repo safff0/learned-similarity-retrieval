@@ -37,9 +37,7 @@ class BaseMetric:
         raise NotImplementedError()
 
     def prepare(self, **kwargs: Any) -> None:
-        """Optional hook before an evaluation epoch starts."""
         return None
 
     def cleanup(self, **kwargs: Any) -> None:
-        """Optional hook after an evaluation epoch finishes."""
         return None

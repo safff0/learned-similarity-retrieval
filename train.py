@@ -5,14 +5,13 @@ import logging
 from omegaconf import OmegaConf
 import torch
 from torch.utils.tensorboard import SummaryWriter
-import torch
 
 import src.datasets  # noqa: F401 — triggers @register decorators
 import src.metrics  # noqa: F401
 import src.model  # noqa: F401
 from src.datasets.data_utils import get_dataloaders
 from src.metrics import build_metrics
-from src.registry import get
+from src.registry import build
 from src.trainer import Trainer, build_optimizer
 from src.utils.init_utils import load_config, resolve_device, set_random_seed, init_logging
 
@@ -52,7 +51,6 @@ def main() -> None:
     Main training entrypoint. Loads the YAML config (with CLI dot overrides),
     builds the model / optimizer / metrics / dataloaders, and runs Trainer.
     """
-    torch.cuda.empty_cache()
     init_logging()
     config = load_config(sys.argv[1:])
 
@@ -62,9 +60,11 @@ def main() -> None:
     dataloaders = get_dataloaders(config, device)
     logger.info("loaded datasets")
 
-    config.model.params["item_count"] = dataloaders["train"].dataset.item_count
-    model = build("model", config.model).to(device)
-    logger.info(f"loaded model: {config.model.name} (item_count={config.model.params['item_count']})")
+    model_params = dict(config.model.params)
+    init_checkpoint = model_params.pop("init_checkpoint", None)
+    init_strict = bool(model_params.pop("init_strict", False))
+    model = build("model", OmegaConf.create({"name": config.model.name, "params": model_params})).to(device)
+    logger.info(f"loaded model: {config.model.name}")
 
     train_dataset = getattr(dataloaders["train"], "dataset", None)
     if hasattr(model, "set_item_catalog") and train_dataset is not None and hasattr(train_dataset, "all_item_ids"):

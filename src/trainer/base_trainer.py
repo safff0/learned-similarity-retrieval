@@ -177,7 +177,6 @@ class BaseTrainer:
 
         logs = dict(last_train_metrics)
 
-        # Run val/test periodically because full-catalog retrieval can dominate wall-clock.
         if epoch % self.eval_period == 0:
             for part, dataloader in self.evaluation_dataloaders.items():
                 val_logs = self._evaluation_epoch(epoch, part, dataloader)

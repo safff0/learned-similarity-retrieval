@@ -7,6 +7,10 @@ from torch.nn import functional as F
 
 from src.datasets.base_dataset import UserHistoryBatch
 from src.model.base_model import BaseModel
+from src.model.similarity_heads import (
+    build_similarity_head,
+    resolve_similarity_runtime_config,
+)
 from src.model.mol_module import (
     MoLHead,
     resolve_mol_head_params,
@@ -64,7 +68,6 @@ class RelativeBucketedTimeAndPositionBasedBias(nn.Module):
             batch_size, seq_len, seq_len
         )
         return rel_pos_bias + rel_ts_bias
-
 
 
 class HSTUBlock(nn.Module):
@@ -183,6 +186,9 @@ class HSTU(BaseModel):
         use_mol: bool = False,
         mol: dict | None = None,
         mol_runtime: dict | None = None,
+        use_similarity_head: bool = False,
+        similarity_head: dict | None = None,
+        similarity_runtime: dict | None = None,
         dot_loss_weight: float = 1.0,
         dot_sampled_softmax: bool = False,
         dot_num_train_negatives: int = 128,
@@ -196,6 +202,7 @@ class HSTU(BaseModel):
         self._rating_embedding_dim = rating_embedding_dim
         self._model_dim = embedding_dim + tabular_dim + rating_embedding_dim
         self._use_mol = use_mol
+        self._use_similarity_head = use_similarity_head
         self._mol_mi_loss_weight = (
             0.0
             if mol_runtime_cfg["mi_loss_weight"] is None
@@ -204,6 +211,10 @@ class HSTU(BaseModel):
         self._mol_uid_embedding_l2_weight = mol_runtime_cfg["uid_embedding_l2_weight"]
         self._mol_query_chunk_size = mol_cfg["query_chunk_size"]
         self._mol_loss_weight = mol_runtime_cfg["loss_weight"]
+        similarity_runtime_cfg = resolve_similarity_runtime_config(similarity_runtime)
+        self._similarity_loss_weight = similarity_runtime_cfg["loss_weight"]
+        self._similarity_mi_loss_weight = similarity_runtime_cfg["mi_loss_weight"] or 0.0
+        self._similarity_uid_l2_weight = similarity_runtime_cfg["uid_embedding_l2_weight"]
         self._dot_loss_weight = dot_loss_weight
         self._dot_sampled_softmax = dot_sampled_softmax
         self._dot_num_train_negatives = dot_num_train_negatives
@@ -257,12 +268,21 @@ class HSTU(BaseModel):
             else nn.Identity()
         )
         self._mol_head: MoLHead | None = None
+        self._similarity_head_name: str | None = None
+        self._similarity_head = None
         if self._use_mol:
             self._mol_head = MoLHead(
                 item_embedding=self._embedding,
                 embedding_dim=embedding_dim,
                 item_count=item_count,
                 **mol_cfg,
+            )
+        elif self._use_similarity_head:
+            self._similarity_head_name, self._similarity_head = build_similarity_head(
+                similarity_head,
+                item_embedding=self._embedding,
+                embedding_dim=embedding_dim,
+                item_count=item_count,
             )
         self.reset_params()
 
@@ -439,13 +459,13 @@ class HSTU(BaseModel):
 
         out: dict[str, Tensor] = {}
         logits: Tensor | None = None
-        needs_logits = (not self._use_mol) or (
+        needs_logits = (not self._use_mol and not self._use_similarity_head) or (
             self._dot_loss_weight > 0.0 and (not self.training or not self._dot_sampled_softmax)
         )
         if needs_logits:
             logits = self._compute_logits(hidden)
             out["logits"] = logits
-        if self._use_mol:
+        if self._use_mol or self._use_similarity_head:
             out["retrieval_queries"] = hidden
             if not self.training:
                 eval_hidden = self._encode_history(
@@ -490,6 +510,22 @@ class HSTU(BaseModel):
             uid_embedding_l2_norm = mol_train_aux_losses.get("uid_embedding_l2_norm")
             if self._mol_uid_embedding_l2_weight > 0.0 and uid_embedding_l2_norm is not None:
                 total_loss = total_loss + self._mol_uid_embedding_l2_weight * uid_embedding_l2_norm
+
+            similarity_loss = None
+            similarity_aux_losses: dict[str, Tensor] = {}
+            if self._use_similarity_head:
+                similarity_loss, similarity_aux_losses = self.compute_similarity_training_loss(hidden, batch)
+                out.update(similarity_aux_losses)
+            if similarity_loss is not None:
+                out["similarity_loss"] = similarity_loss
+                total_loss = total_loss + self._similarity_loss_weight * similarity_loss
+
+            aux_similarity_mi_loss = similarity_aux_losses.get("mi_loss")
+            if self._similarity_mi_loss_weight > 0.0 and aux_similarity_mi_loss is not None:
+                total_loss = total_loss + self._similarity_mi_loss_weight * aux_similarity_mi_loss
+            similarity_uid_l2_norm = similarity_aux_losses.get("uid_embedding_l2_norm")
+            if self._similarity_uid_l2_weight > 0.0 and similarity_uid_l2_norm is not None:
+                total_loss = total_loss + self._similarity_uid_l2_weight * similarity_uid_l2_norm
 
             out["loss"] = total_loss
         return out
