@@ -9,26 +9,6 @@ from torch.nn import functional as F
 
 
 SIMILARITY_HEAD_DEFAULTS: dict[str, dict[str, Any]] = {
-    "mol": {
-        "dot_product_dimension": 64,
-        "query_groups": 8,
-        "item_groups": 4,
-        "temperature": 0.05,
-        "query_hidden_dim": 512,
-        "item_hidden_dim": 0,
-        "query_dropout_rate": 0.0,
-        "item_dropout_rate": 0.1,
-        "query_nonlinearity": "swiglu",
-        "item_nonlinearity": "swiglu",
-        "uid_embedding_hash_sizes": [6040],
-        "uid_dropout_rate": 0.5,
-        "softmax_dropout_rate": 0.2,
-        "num_train_negatives": 128,
-        "query_chunk_size": 64,
-        "softmax_temperature": 1.0,
-        "retrieval_chunk_size": 512,
-        "eps": 1.0e-6,
-    },
     "cosine": {
         "projection_dim": 64,
         "query_hidden_dim": 256,
@@ -76,7 +56,7 @@ def resolve_similarity_head_config(
     similarity_head: Mapping[str, Any] | None,
 ) -> tuple[str, dict[str, Any]]:
     if similarity_head is None:
-        name = "mol"
+        name = "cosine"
         params: dict[str, Any] = {}
     else:
         raw = dict(similarity_head)
@@ -327,159 +307,6 @@ class SimilarityHeadBase(nn.Module):
         raise NotImplementedError()
 
 
-class MoLHead(SimilarityHeadBase):
-    def __init__(
-        self,
-        item_embedding: nn.Embedding,
-        embedding_dim: int,
-        item_count: int,
-        dot_product_dimension: int,
-        query_groups: int,
-        item_groups: int,
-        temperature: float,
-        query_hidden_dim: int,
-        item_hidden_dim: int,
-        query_dropout_rate: float,
-        item_dropout_rate: float,
-        query_nonlinearity: str,
-        item_nonlinearity: str,
-        uid_embedding_hash_sizes: list[int] | None,
-        uid_dropout_rate: float,
-        softmax_dropout_rate: float,
-        num_train_negatives: int,
-        query_chunk_size: int,
-        softmax_temperature: float,
-        retrieval_chunk_size: int,
-        eps: float,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(
-            item_embedding=item_embedding,
-            embedding_dim=embedding_dim,
-            item_count=item_count,
-            num_train_negatives=num_train_negatives,
-            query_chunk_size=query_chunk_size,
-            softmax_temperature=softmax_temperature,
-            retrieval_chunk_size=retrieval_chunk_size,
-            eps=eps,
-        )
-        self._query_groups = query_groups
-        self._item_groups = item_groups
-        self._dot_product_dimension = dot_product_dimension
-        self._temperature = temperature
-        self._uid_hash_size = uid_embedding_hash_sizes[0] if uid_embedding_hash_sizes else None
-        self._uid_dim = min(embedding_dim, 32) if self._uid_hash_size else 0
-        self._uid_dropout = nn.Dropout(uid_dropout_rate)
-        self._uid_embedding = (
-            nn.Embedding(self._uid_hash_size, self._uid_dim) if self._uid_hash_size else None
-        )
-        query_input_dim = embedding_dim + self._uid_dim
-        self._query_proj = _build_projection(
-            input_dim=query_input_dim,
-            output_dim=query_groups * dot_product_dimension,
-            hidden_dim=query_hidden_dim,
-            dropout_rate=query_dropout_rate,
-            nonlinearity=query_nonlinearity,
-        )
-        self._item_proj = _build_projection(
-            input_dim=embedding_dim,
-            output_dim=item_groups * dot_product_dimension,
-            hidden_dim=item_hidden_dim,
-            dropout_rate=item_dropout_rate,
-            nonlinearity=item_nonlinearity,
-        )
-        self._query_gate = nn.Sequential(
-            nn.Dropout(softmax_dropout_rate),
-            nn.Linear(query_input_dim, query_groups),
-        )
-        self._item_gate = nn.Sequential(
-            nn.Dropout(softmax_dropout_rate),
-            nn.Linear(embedding_dim, item_groups),
-        )
-
-    def _augment_query(self, query_embeddings: Tensor, user_ids: Tensor | None) -> tuple[Tensor, Tensor]:
-        if self._uid_embedding is None or user_ids is None:
-            return query_embeddings, query_embeddings
-        uid = self._uid_embedding(user_ids % self._uid_hash_size)
-        uid = self._uid_dropout(uid)
-        augmented = torch.cat([query_embeddings, uid], dim=-1)
-        uid_l2 = uid.pow(2).sum(dim=-1).mean()
-        return augmented, uid_l2
-
-    def _prepare_item_cache(self, item_embeddings: Tensor, item_ids: Tensor) -> Any:
-        item_components = self._item_proj(item_embeddings).view(
-            item_embeddings.size(0), self._item_groups, self._dot_product_dimension
-        )
-        item_gate = self._item_gate(item_embeddings)
-        return item_embeddings, item_components, item_gate
-
-    def _score_from_cache(
-        self,
-        query_embeddings: Tensor,
-        item_ids: Tensor,
-        item_cache: Any,
-        user_ids: Tensor | None = None,
-    ) -> tuple[Tensor, dict[str, Tensor]]:
-        item_embeddings, item_components, item_gate = item_cache
-        item_embeddings = item_embeddings.unsqueeze(0).expand(query_embeddings.size(0), -1, -1)
-        item_components = item_components.unsqueeze(0).expand(query_embeddings.size(0), -1, -1, -1)
-        item_gate = item_gate.unsqueeze(0).expand(query_embeddings.size(0), -1, -1)
-        item_id_batch = item_ids.unsqueeze(0).expand(query_embeddings.size(0), -1)
-        return self._score_components(
-            query_embeddings=query_embeddings,
-            item_ids=item_id_batch,
-            item_embeddings=item_embeddings,
-            item_components=item_components,
-            item_gate_logits=item_gate,
-            user_ids=user_ids,
-        )
-
-    def score_candidates(
-        self,
-        query_embeddings: Tensor,
-        item_ids: Tensor,
-        item_embeddings: Tensor,
-        user_ids: Tensor | None = None,
-    ) -> tuple[Tensor, dict[str, Tensor]]:
-        item_components = self._item_proj(item_embeddings).view(
-            item_embeddings.size(0), item_embeddings.size(1), self._item_groups, self._dot_product_dimension
-        )
-        item_gate = self._item_gate(item_embeddings)
-        return self._score_components(
-            query_embeddings=query_embeddings,
-            item_ids=item_ids,
-            item_embeddings=item_embeddings,
-            item_components=item_components,
-            item_gate_logits=item_gate,
-            user_ids=user_ids,
-        )
-
-    def _score_components(
-        self,
-        query_embeddings: Tensor,
-        item_ids: Tensor,
-        item_embeddings: Tensor,
-        item_components: Tensor,
-        item_gate_logits: Tensor,
-        user_ids: Tensor | None,
-    ) -> tuple[Tensor, dict[str, Tensor]]:
-        augmented_query, uid_l2 = self._augment_query(query_embeddings, user_ids)
-        query_components = self._query_proj(augmented_query).view(
-            query_embeddings.size(0), self._query_groups, self._dot_product_dimension
-        )
-        query_gate = self._query_gate(augmented_query)
-        pair_logits = torch.einsum("bqd,bnid->bqni", query_components, item_components) / self._temperature
-        gate_logits = query_gate.unsqueeze(-1).unsqueeze(2) + item_gate_logits.unsqueeze(1)
-        gate_weights = gate_logits.flatten(1, 2).softmax(dim=1).view_as(gate_logits)
-        scores = (pair_logits * gate_weights).sum(dim=(1, 3))
-        aux: dict[str, Tensor] = {}
-        if self._uid_embedding is not None and user_ids is not None:
-            aux["uid_embedding_l2_norm"] = uid_l2
-        entropy = -(gate_weights.clamp_min(self._eps).log() * gate_weights).sum(dim=(1, 2, 3)).mean()
-        aux["mi_loss"] = -entropy
-        return scores, aux
-
-
 class CosineSimilarityHead(SimilarityHeadBase):
     def __init__(
         self,
@@ -617,9 +444,7 @@ def build_similarity_head(
 ) -> tuple[str, SimilarityHeadBase]:
     name, cfg = resolve_similarity_head_config(similarity_head)
     head_cls: type[SimilarityHeadBase]
-    if name == "mol":
-        head_cls = MoLHead
-    elif name == "cosine":
+    if name == "cosine":
         head_cls = CosineSimilarityHead
     elif name == "bilinear":
         head_cls = BilinearSimilarityHead
