@@ -4,8 +4,6 @@ We reproduce and analyze **Retrieval with Learned Similarities** (RAILS), which 
 
 See the [paper](first_step.pdf) for full details.
 
-![MoL cluster embeddings](mol_clusters.jpg)
-
 ## Installation
 
 0. Create and activate a conda environment
