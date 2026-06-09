@@ -22,6 +22,7 @@ data:
 model:
   name: HSTU
   params:
+    item_count: 3707
     max_history_size: 200
     embedding_dim: 50
     rating_embedding_dim: 16

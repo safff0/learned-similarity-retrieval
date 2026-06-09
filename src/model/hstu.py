@@ -420,20 +420,45 @@ class HSTU(BaseModel):
             rating_emb = self._rating_embedding(batch.history_ratings)
             item_emb = torch.cat([item_emb, rating_emb], dim=-1)
         timestamps = batch.history_timestamps
+        history_features = batch.history_features if self._tabular_dim > 0 else None
 
         if append_output_slot:
-            item_emb = F.pad(item_emb, pad=(0, 0, 0, 1))
-            mask = F.pad(mask, pad=(0, 1), value=True)
-            timestamps = torch.cat([timestamps, batch.timestamp.unsqueeze(1)], dim=1)
+            lengths = mask.sum(dim=1).long()
+            new_seq_len = seq_len + 1
+            new_item_emb = item_emb.new_zeros(batch_size, new_seq_len, item_emb.size(-1))
+            new_mask = torch.zeros(batch_size, new_seq_len, dtype=torch.bool, device=device)
+            new_timestamps = timestamps.new_zeros(batch_size, new_seq_len)
+            new_history_features = (
+                history_features.new_zeros(
+                    batch_size,
+                    new_seq_len,
+                    history_features.size(-1),
+                )
+                if history_features is not None
+                else None
+            )
+
+            for b in range(batch_size):
+                length = int(lengths[b].item())
+                if length > 0:
+                    new_item_emb[b, :length] = item_emb[b, :length]
+                    new_timestamps[b, :length] = timestamps[b, :length]
+                    if new_history_features is not None:
+                        new_history_features[b, :length] = history_features[b, :length]
+                new_mask[b, :length] = True
+                new_mask[b, length] = True
+                new_timestamps[b, length] = batch.timestamp[b]
+
+            item_emb = new_item_emb
+            mask = new_mask
+            timestamps = new_timestamps
+            history_features = new_history_features
             seq_len = seq_len + 1
 
         positions = torch.arange(seq_len, device=device).expand(batch_size, seq_len)
         pos_emb = self._pos_embedding(positions)
         x = item_emb * (item_emb.size(-1) ** 0.5) + pos_emb
         if self._tabular_dim > 0:
-            history_features = batch.history_features
-            if append_output_slot:
-                history_features = F.pad(history_features, pad=(0, 0, 0, 1))
             x = torch.cat([x, history_features], dim=-1)
         x = self._input_dropout(x)
 
@@ -466,16 +491,6 @@ class HSTU(BaseModel):
             logits = self._compute_logits(hidden)
             out["logits"] = logits
         out["retrieval_queries"] = hidden
-        if not self.training:
-            eval_hidden = self._encode_history(
-                batch=batch,
-                append_output_slot=True,
-            )
-            next_query_idx = batch.mask.sum(dim=1).long()
-            out["next_retrieval_queries"] = eval_hidden[
-                torch.arange(eval_hidden.size(0), device=eval_hidden.device),
-                next_query_idx,
-            ]
 
         if batch.target is not None:
             out["targets"] = batch.target.flatten()
