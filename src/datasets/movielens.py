@@ -76,11 +76,8 @@ class MovieLensDataset(BaseDataset):
         self._partition = partition
         self._split_strategy = split_strategy
 
-        self._ratings = pd.read_csv(
-            data_dir / "ratings.dat",
-            sep="::",
-            engine="python",
-            names=["userId", "movieId", "rating", "timestamp"],
+        self._ratings = self._read_data_file(
+            data_dir, "ratings", names=["userId", "movieId", "rating", "timestamp"]
         )
         if rating_threshold:
             self._ratings = self._ratings[self._ratings["rating"] >= rating_threshold]
@@ -90,19 +87,15 @@ class MovieLensDataset(BaseDataset):
             (1 - val_part) * self._ratings["timestamp"].min()
         )
 
-        self._movies = pd.read_csv(
-            data_dir / "movies.dat",
-            sep="::",
-            engine="python",
-            names=["movieId", "title", "genres"],
-            encoding="latin-1",
+        self._movies = self._read_data_file(
+            data_dir, "movies", names=["movieId", "title", "genres"], encoding="latin-1"
         )
         rated_movie_ids = sorted(self._ratings["movieId"].astype(int).unique().tolist())
         self._movie_id_to_local_id = {movie_id: i + 1 for i, movie_id in enumerate(rated_movie_ids)}
         self._local_id_to_movie_id = {local_id: movie_id for movie_id, local_id in self._movie_id_to_local_id.items()}
-        self._all_genres = sorted(set(self._movies["genres"].str.split("|").explode()))
+        self._all_genres = sorted(set(self._movies["genres"].astype(str).str.split("|").explode()))
         self._genre_to_idx = {g: i for i, g in enumerate(self._all_genres)}
-        genre_onehot = self._movies["genres"].str.get_dummies(sep="|")[self._all_genres]
+        genre_onehot = self._movies["genres"].astype(str).str.get_dummies(sep="|")[self._all_genres]
         raw_movie_features = dict(zip(
             self._movies["movieId"].astype(int),
             torch.from_numpy(genre_onehot.values).float(),
@@ -111,15 +104,28 @@ class MovieLensDataset(BaseDataset):
             local_id: raw_movie_features[movie_id]
             for movie_id, local_id in self._movie_id_to_local_id.items()
         }
-        self._users = pd.read_csv(
-            data_dir / "users.dat",
-            sep="::",
-            engine="python",
-            names=["userId", "gender", "age", "occupation", "zipCode"],
-        )
+        try:
+            self._users = self._read_data_file(
+                data_dir, "users", names=["userId", "gender", "age", "occupation", "zipCode"]
+            )
+        except FileNotFoundError:
+            self._users = pd.DataFrame() 
+
         self._all_item_ids = list(range(1, len(self._movie_id_to_local_id) + 1))
         self._index = self._build_index()
         logger.info("Unique rated items: %s", len(self._all_item_ids))
+
+    def _read_data_file(self, data_dir: Path, filename: str, names: list[str], encoding: str = "utf-8") -> pd.DataFrame:
+        """Helper to read either modern .csv or legacy .dat movielens files."""
+        csv_file = data_dir / f"{filename}.csv"
+        dat_file = data_dir / f"{filename}.dat"
+
+        if csv_file.exists():
+            return pd.read_csv(csv_file, sep=",", header=0, names=names, encoding=encoding)
+        elif dat_file.exists():
+            return pd.read_csv(dat_file, sep="::", engine="python", header=None, names=names, encoding=encoding)
+        else:
+            raise FileNotFoundError(f"Missing {filename}.csv or {filename}.dat in {data_dir}")
 
     def _build_download_url(self, variant: MovieLensVariant) -> str:
         return f"https://files.grouplens.org/datasets/movielens/{variant}.zip"
@@ -260,3 +266,13 @@ class MovieLensDataset(BaseDataset):
     @property
     def all_item_ids(self) -> list[int]:
         return self._all_item_ids
+
+    def get_movie_name(self, local_item_id: int) -> str:
+        movie_id = self._local_id_to_movie_id.get(local_item_id)
+        if not movie_id: return "Unknown"
+        return self._movies[self._movies["movieId"] == movie_id]["title"].iloc[0]
+
+    def get_movie_genres(self, local_item_id: int) -> str:
+        movie_id = self._local_id_to_movie_id.get(local_item_id)
+        if not movie_id: return "Unknown"
+        return self._movies[self._movies["movieId"] == movie_id]["genres"].iloc[0]

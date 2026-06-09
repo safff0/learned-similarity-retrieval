@@ -91,3 +91,29 @@ def init_logging(level: int = logging.INFO) -> None:
     root_logger.setLevel(level)
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
+
+
+def load_init_checkpoint(model, checkpoint_path: str, strict: bool) -> None:
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint.get("state_dict", checkpoint)
+    if strict:
+        model.load_state_dict(state_dict, strict=True)
+        logger.info("initialized model from checkpoint %s (strict)", checkpoint_path)
+        return
+
+    current_state = model.state_dict()
+    filtered_state = {
+        key: value
+        for key, value in state_dict.items()
+        if key in current_state and current_state[key].shape == value.shape
+    }
+    missing = sorted(set(current_state) - set(filtered_state))
+    skipped = sorted(set(state_dict) - set(filtered_state))
+    model.load_state_dict(filtered_state, strict=False)
+    logger.info(
+        "initialized model from checkpoint %s with %d matched tensors, %d missing, %d skipped",
+        checkpoint_path,
+        len(filtered_state),
+        len(missing),
+        len(skipped),
+    )

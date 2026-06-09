@@ -22,7 +22,6 @@ data:
 model:
   name: SASRec
   params:
-    item_count: 3707
     max_history_size: 200
     embedding_dim: 50
     attn_n_layers: 2
@@ -105,7 +104,6 @@ trainer:
   seed: 1
   n_epochs: 100
   epoch_len: null
-  eval_period: 5
   log_step: 50
   save_period: 5
   save_dir: ./saved/sasrec_mol

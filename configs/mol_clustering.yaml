@@ -48,9 +48,9 @@ model:
       eps: 1.0e-6
       autocast_bf16: true
       num_train_negatives: 128
-      query_chunk_size: 1024
+      query_chunk_size: 10000
       softmax_temperature: 1.0
-      query_dropout_rate: 0.2
+      query_dropout_rate: 0.0
       query_hidden_dim: 512
       uid_embedding_hash_sizes: [6040]
       uid_dropout_rate: 0.5
@@ -63,13 +63,15 @@ model:
       gating_qi_hidden_dim: 128
       gating_query_fn: true
       gating_item_fn: true
-      gating_item_dropout_rate: 0.1
-      gating_qi_dropout_rate: 0.1
+      gating_item_dropout_rate: 0.0
+      gating_qi_dropout_rate: 0.0
       softmax_dropout_rate: 0.2
     mol_runtime:
       mi_loss_weight: 0.001
       uid_embedding_l2_weight: 0.1
       loss_weight: 1.0
+    init_checkpoint: "saved/hstu_mol/checkpoint-epoch100.pth"
+    init_strict: true
 
 optimizer:
   name: AdamW
@@ -107,8 +109,8 @@ trainer:
   epoch_len: null
   log_step: 50
   save_period: 5
-  save_dir: ./saved/hstu_mol_20m
-  tb_dir: ./runs/hstu_mol_20m
+  save_dir: ./saved/hstu_mol
+  tb_dir: ./runs/hstu_mol
   device_tensors: [data_object, labels]
   loss_names: [loss]
   max_grad_norm: null

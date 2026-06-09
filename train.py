@@ -13,37 +13,11 @@ from src.datasets.data_utils import get_dataloaders
 from src.metrics import build_metrics
 from src.registry import build
 from src.trainer import Trainer, build_optimizer
-from src.utils.init_utils import load_config, resolve_device, set_random_seed, init_logging
+from src.utils.init_utils import load_config, resolve_device, set_random_seed, init_logging, load_init_checkpoint
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 logger = logging.getLogger(__name__)
-
-
-def _load_init_checkpoint(model, checkpoint_path: str, strict: bool) -> None:
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    state_dict = checkpoint.get("state_dict", checkpoint)
-    if strict:
-        model.load_state_dict(state_dict, strict=True)
-        logger.info("initialized model from checkpoint %s (strict)", checkpoint_path)
-        return
-
-    current_state = model.state_dict()
-    filtered_state = {
-        key: value
-        for key, value in state_dict.items()
-        if key in current_state and current_state[key].shape == value.shape
-    }
-    missing = sorted(set(current_state) - set(filtered_state))
-    skipped = sorted(set(state_dict) - set(filtered_state))
-    model.load_state_dict(filtered_state, strict=False)
-    logger.info(
-        "initialized model from checkpoint %s with %d matched tensors, %d missing, %d skipped",
-        checkpoint_path,
-        len(filtered_state),
-        len(missing),
-        len(skipped),
-    )
 
 
 def main() -> None:
@@ -63,6 +37,11 @@ def main() -> None:
     model_params = dict(config.model.params)
     init_checkpoint = model_params.pop("init_checkpoint", None)
     init_strict = bool(model_params.pop("init_strict", False))
+
+    train_dataset = getattr(dataloaders["train"], "dataset", None)
+    if train_dataset is not None and hasattr(train_dataset, "all_item_ids"):
+        model_params.setdefault("item_count", len(train_dataset.all_item_ids) + 1)
+
     model = build("model", OmegaConf.create({"name": config.model.name, "params": model_params})).to(device)
     logger.info(f"loaded model: {config.model.name}")
 
@@ -72,7 +51,7 @@ def main() -> None:
         logger.info("loaded item catalog with %d ids", len(train_dataset.all_item_ids))
 
     if init_checkpoint:
-        _load_init_checkpoint(model, init_checkpoint, strict=init_strict)
+        load_init_checkpoint(model, init_checkpoint, strict=init_strict)
 
     metrics = build_metrics(config)
 
