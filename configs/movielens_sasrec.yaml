@@ -6,14 +6,16 @@ data:
         variant: "ml-1m"
         partition: train
         max_history_size: 200
+        split_strategy: "leave_one_out"
     val:
       name: MovieLensDataset
       params:
         variant: "ml-1m"
         partition: val
         max_history_size: 200
+        split_strategy: "leave_one_out"
   dataloader:
-    batch_size: 16
+    batch_size: 128
     num_workers: 2
     pin_memory: true
 
@@ -31,23 +33,26 @@ optimizer:
 
 metrics:
   device: auto
-  train:
-    - name: HitrateNegatives
+  train: []
+  inference:
+    - name: Hitrate
       params:
-        alias: "hitrate@10"
-        k: 10
-        n_negatives: 100
-    - name: HitrateNegatives
-      params:
-        alias: "hitrate@25"
-        k: 25
-        n_negatives: 100
-    - name: HitrateNegatives
-      params:
-        alias: "hitrate@50"
+        alias: "hitrate_full@50"
         k: 50
-        n_negatives: 100
-  inference: []
+        last_only: true
+        filter_history: false
+    - name: Hitrate
+      params:
+        alias: "hitrate_full@10"
+        k: 10
+        last_only: true
+        filter_history: false
+    - name: Hitrate
+      params:
+        alias: "hitrate_full@1"
+        k: 1
+        last_only: true
+        filter_history: false
 
 trainer:
   device: auto

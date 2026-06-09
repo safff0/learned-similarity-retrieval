@@ -81,19 +81,19 @@ metrics:
   device: auto
   train: []
   inference:
-    - name: HitrateMoL
+    - name: Hitrate
       params:
         alias: "hitrate_mol@50"
         k: 50
         last_only: true
         filter_history: false
-    - name: HitrateMoL
+    - name: Hitrate
       params:
         alias: "hitrate_mol@10"
         k: 10
         last_only: true
         filter_history: false
-    - name: HitrateMoL
+    - name: Hitrate
       params:
         alias: "hitrate_mol@1"
         k: 1

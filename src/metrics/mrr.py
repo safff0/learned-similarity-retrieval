@@ -7,7 +7,10 @@ from src.registry import register
 
 
 @register("metric")
-class MRRMoL(BaseMetric):
+class MRR(BaseMetric):
+    """Mean Reciprocal Rank with history filtering. Retrieves the entire item
+    catalog through ``model.retrieve_topk`` so the rank is exact."""
+
     def __init__(
         self,
         last_only: bool = False,
@@ -27,6 +30,7 @@ class MRRMoL(BaseMetric):
         history_ids: torch.Tensor,
         user_id: torch.Tensor,
         model: Any,
+        next_retrieval_queries: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> tuple[float, int]:
         valid = loss_mask.bool()
@@ -39,7 +43,10 @@ class MRRMoL(BaseMetric):
 
         b_idx = positions[:, 0]
         t_idx = positions[:, 1]
-        query_embeddings = retrieval_queries[b_idx, t_idx]
+        if self._last_only and next_retrieval_queries is not None:
+            query_embeddings = next_retrieval_queries[b_idx]
+        else:
+            query_embeddings = retrieval_queries[b_idx, t_idx]
         target_items = target[b_idx, t_idx].long()
         query_user_ids = user_id[b_idx].long()
         n = target_items.numel()

@@ -149,15 +149,13 @@ class SASRec(BaseModel):
             raise ValueError(f"Unknown user_embedding_norm: {self._user_embedding_norm}")
         logits = hidden @ self._embedding.weight.T
 
-        out: dict[str, Tensor] = {"logits": logits}
-        if self._use_mol or self._use_similarity_head:
-            out["retrieval_queries"] = hidden
-            if not self.training:
-                last_history_idx = batch.mask.sum(dim=1).long() - 1
-                out["next_retrieval_queries"] = hidden[
-                    torch.arange(hidden.size(0), device=hidden.device),
-                    last_history_idx,
-                ]
+        out: dict[str, Tensor] = {"logits": logits, "retrieval_queries": hidden}
+        if not self.training:
+            last_history_idx = batch.mask.sum(dim=1).long() - 1
+            out["next_retrieval_queries"] = hidden[
+                torch.arange(hidden.size(0), device=hidden.device),
+                last_history_idx,
+            ]
         if batch.target is not None:
             out["targets"] = batch.target.flatten()
             total_loss = hidden.new_zeros(())

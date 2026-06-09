@@ -465,18 +465,17 @@ class HSTU(BaseModel):
         if needs_logits:
             logits = self._compute_logits(hidden)
             out["logits"] = logits
-        if self._use_mol or self._use_similarity_head:
-            out["retrieval_queries"] = hidden
-            if not self.training:
-                eval_hidden = self._encode_history(
-                    batch=batch,
-                    append_output_slot=True,
-                )
-                last_history_idx = batch.mask.sum(dim=1).long() - 1
-                out["next_retrieval_queries"] = eval_hidden[
-                    torch.arange(eval_hidden.size(0), device=eval_hidden.device),
-                    last_history_idx,
-                ]
+        out["retrieval_queries"] = hidden
+        if not self.training:
+            eval_hidden = self._encode_history(
+                batch=batch,
+                append_output_slot=True,
+            )
+            last_history_idx = batch.mask.sum(dim=1).long() - 1
+            out["next_retrieval_queries"] = eval_hidden[
+                torch.arange(eval_hidden.size(0), device=eval_hidden.device),
+                last_history_idx,
+            ]
 
         if batch.target is not None:
             out["targets"] = batch.target.flatten()

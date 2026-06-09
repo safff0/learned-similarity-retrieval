@@ -9,12 +9,9 @@ import src.datasets  # noqa: F401  triggers @register
 import src.metrics   # noqa: F401
 import src.model     # noqa: F401
 from src.datasets.data_utils import get_dataloaders
-from src.metrics.hitrate_full import HitrateFull
-from src.metrics.hitrate_mol import HitrateMoL
-from src.metrics.mrr_full import MRRFull
-from src.metrics.mrr_mol import MRRMoL
-from src.metrics.ndcg_full import NDCGFull
-from src.metrics.ndcg_mol import NDCGMoL
+from src.metrics.hitrate import Hitrate
+from src.metrics.mrr import MRR
+from src.metrics.ndcg import NDCG
 from src.metrics.tracker import MetricTracker
 from src.registry import build
 from src.utils.init_utils import (
@@ -66,19 +63,11 @@ def main() -> None:
     model.eval()
     logger.info("loaded checkpoint: %s", init_checkpoint)
 
-    use_mol_path = hasattr(model, "retrieve_topk")
     metrics = []
-    if use_mol_path:
-        for k in K_VALUES:
-            metrics.append(HitrateMoL(k=k, last_only=True, alias=f"HR@{k}"))
-            metrics.append(NDCGMoL(k=k, last_only=True, alias=f"NDCG@{k}"))
-        metrics.append(MRRMoL(last_only=True, alias="MRR"))
-    else:
-        for k in K_VALUES:
-            metrics.append(HitrateFull(k=k, last_only=True, alias=f"HR@{k}"))
-            metrics.append(NDCGFull(k=k, last_only=True, alias=f"NDCG@{k}"))
-        metrics.append(MRRFull(last_only=True, alias="MRR"))
-    logger.info("metric family: %s", "MoL (retrieve_topk)" if use_mol_path else "full-vocab")
+    for k in K_VALUES:
+        metrics.append(Hitrate(k=k, last_only=True, filter_history=False, alias=f"HR@{k}"))
+        metrics.append(NDCG(k=k, last_only=True, filter_history=False, alias=f"NDCG@{k}"))
+    metrics.append(MRR(last_only=True, alias="MRR"))
 
     tracker = MetricTracker(*[m.alias for m in metrics])
 
@@ -90,6 +79,9 @@ def main() -> None:
         for batch in val_loader:
             batch = _move_to_device(batch, device)
             outputs = model(batch)
+            cache = getattr(model, "_metric_retrieval_cache", None)
+            if cache is not None:
+                cache.clear()
             flat = {**vars(batch), **outputs, "model": model}
             for met in metrics:
                 value, n = met(**flat)

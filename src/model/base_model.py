@@ -79,16 +79,47 @@ class BaseModel(nn.Module):
         similarity_head = self._get_similarity_head()
         if similarity_head is not None:
             return similarity_head.retrieval_item_count
+        # Dot-product fallback: number of items in the embedding table (excl. PAD at 0).
+        item_emb = getattr(self, "_embedding", None)
+        if item_emb is not None:
+            return item_emb.num_embeddings - 1
         return 0
 
-    def retrieve_topk(self, *args, **kwargs):
+    def retrieve_topk(
+        self,
+        query_embeddings: Tensor,
+        k: int,
+        user_ids: Tensor | None = None,
+        **kwargs: Any,
+    ) -> tuple[Tensor, Tensor]:
         mol_head = self._get_mol_head()
         if mol_head is not None:
-            return mol_head.retrieve_topk(*args, **kwargs)
+            return mol_head.retrieve_topk(
+                query_embeddings=query_embeddings,
+                k=k,
+                user_ids=user_ids,
+                **kwargs,
+            )
         similarity_head = self._get_similarity_head()
         if similarity_head is not None:
-            return similarity_head.retrieve_topk(*args, **kwargs)
-        raise RuntimeError("retrieve_topk() is only available when a retrieval head is configured")
+            return similarity_head.retrieve_topk(
+                query_embeddings=query_embeddings,
+                k=k,
+                user_ids=user_ids,
+                **kwargs,
+            )
+        # Dot-product fallback for vanilla models: score query against every
+        # row of the item embedding table and pick top-k. PAD (id 0) is masked.
+        item_emb = getattr(self, "_embedding", None)
+        if item_emb is None:
+            raise RuntimeError(
+                "retrieve_topk() needs either a configured head or a `_embedding` "
+                "attribute exposing the item embedding table."
+            )
+        scores = query_embeddings @ item_emb.weight.T  # (B, V)
+        scores[:, 0] = float("-inf")
+        k = min(k, scores.size(1))
+        return scores.topk(k, dim=-1)
 
     def similarity_fn(
         self,

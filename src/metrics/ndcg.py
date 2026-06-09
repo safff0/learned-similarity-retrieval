@@ -7,7 +7,11 @@ from src.registry import register
 
 
 @register("metric")
-class HitrateMoL(BaseMetric):
+class NDCG(BaseMetric):
+    """NDCG@K with history filtering. With a single relevant target the
+    IDCG@K is 1, so the metric simplifies to ``1/log2(rank+1)`` when the
+    target lands in top-K after history filtering, else 0."""
+
     def __init__(
         self,
         k: int,
@@ -16,7 +20,7 @@ class HitrateMoL(BaseMetric):
         filter_history: bool = True,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._k = k
         self._overfetch_factor = overfetch_factor
@@ -55,7 +59,7 @@ class HitrateMoL(BaseMetric):
             return 0.0, 0
 
         overfetch_k = min(
-            getattr(model, "retrieval_item_count", model._embedding.num_embeddings),
+            model.retrieval_item_count,
             max(
                 self._k + history_ids.size(1) + 1,
                 self._k * self._overfetch_factor,
@@ -94,12 +98,12 @@ class HitrateMoL(BaseMetric):
             invalid_mask = (candidate_ids.unsqueeze(-1) == histories.unsqueeze(1)).any(dim=-1)
             valid_mask = valid_mask & (~invalid_mask | target_mask)
         kept_rank = valid_mask.cumsum(dim=1)
-        hits = (
-            target_mask
-            & valid_mask
-            & (kept_rank <= self._k)
-        ).any(dim=1)
-        return hits.float().mean().item(), n
+        ndcg = torch.where(
+            target_mask & valid_mask & (kept_rank <= self._k),
+            1.0 / torch.log2(kept_rank.clamp_min(1).float() + 1.0),
+            torch.zeros_like(kept_rank, dtype=torch.float32),
+        ).amax(dim=1)
+        return ndcg.mean().item(), n
 
     def prepare(self, model: Any, **kwargs: Any) -> None:
         setattr(model, "_metric_retrieval_cache", {})
