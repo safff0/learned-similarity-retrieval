@@ -28,7 +28,7 @@ model:
     num_ratings: 6
     attn_n_layers: 8
     attn_n_head: 2
-    attn_dropout: 0.0
+    attn_dropout: 0.2
     attn_linear_dropout: 0.2
     attn_attention_dim: 25
     attn_linear_dim: 25
@@ -107,8 +107,8 @@ trainer:
   epoch_len: null
   log_step: 50
   save_period: 5
-  save_dir: ./saved/hstu_mol_20m
-  tb_dir: ./runs/hstu_mol_20m
+  save_dir: ./saved/hstu_mol
+  tb_dir: ./runs/hstu_mol
   device_tensors: [data_object, labels]
   loss_names: [loss]
   max_grad_norm: null
