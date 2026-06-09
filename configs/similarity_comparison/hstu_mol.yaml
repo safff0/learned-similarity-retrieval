@@ -21,14 +21,13 @@ data:
 model:
   name: HSTU
   params:
-    item_count: 3707
     max_history_size: 200
     embedding_dim: 50
     rating_embedding_dim: 16
     num_ratings: 6
     attn_n_layers: 8
     attn_n_head: 2
-    attn_dropout: 0.0
+    attn_dropout: 0.2
     attn_linear_dropout: 0.2
     attn_attention_dim: 25
     attn_linear_dim: 25
@@ -48,9 +47,9 @@ model:
       eps: 1.0e-06
       autocast_bf16: true
       num_train_negatives: 128
-      query_chunk_size: 64
+      query_chunk_size: 1024
       softmax_temperature: 1.0
-      query_dropout_rate: 0.0
+      query_dropout_rate: 0.2
       query_hidden_dim: 512
       uid_embedding_hash_sizes:
       - 6040
@@ -64,8 +63,8 @@ model:
       gating_qi_hidden_dim: 128
       gating_query_fn: true
       gating_item_fn: true
-      gating_item_dropout_rate: 0.0
-      gating_qi_dropout_rate: 0.0
+      gating_item_dropout_rate: 0.1
+      gating_qi_dropout_rate: 0.1
       softmax_dropout_rate: 0.2
     mol_runtime:
       mi_loss_weight: 0.001
@@ -81,33 +80,28 @@ metrics:
   device: auto
   train: []
   inference:
-  - name: HitrateMoL
+  - name: Hitrate
     params:
       alias: hitrate_mol@50
       k: 50
       last_only: true
       filter_history: false
-  - name: HitrateMoL
+  - name: Hitrate
     params:
       alias: hitrate_mol@10
       k: 10
       last_only: true
       filter_history: false
-  - name: HitrateMoL
+  - name: Hitrate
     params:
       alias: hitrate_mol@1
       k: 1
       last_only: true
       filter_history: false
-  - name: MRRMoL
-    params:
-      alias: mrr_mol
-      last_only: true
-      filter_history: false
 trainer:
   device: auto
   seed: 1
-  n_epochs: 25
+  n_epochs: 50
   epoch_len: null
   eval_period: 5
   log_step: 50

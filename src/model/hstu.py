@@ -471,10 +471,10 @@ class HSTU(BaseModel):
                 batch=batch,
                 append_output_slot=True,
             )
-            last_history_idx = batch.mask.sum(dim=1).long() - 1
+            next_query_idx = batch.mask.sum(dim=1).long()
             out["next_retrieval_queries"] = eval_hidden[
                 torch.arange(eval_hidden.size(0), device=eval_hidden.device),
-                last_history_idx,
+                next_query_idx,
             ]
 
         if batch.target is not None:
