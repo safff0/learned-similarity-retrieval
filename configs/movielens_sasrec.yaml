@@ -3,13 +3,13 @@ data:
     train:
       name: MovieLensDataset
       params:
-        variant: "ml-20m"
+        variant: "ml-1m"
         partition: train
         max_history_size: 200
     val:
       name: MovieLensDataset
       params:
-        variant: "ml-20m"
+        variant: "ml-1m"
         partition: val
         max_history_size: 200
   dataloader:
