@@ -43,13 +43,7 @@ python train.py --config configs/similarity_comparison/sasrec_mol.yaml
 To evaluate a trained checkpoint (for example, HSTU with MLP):
 
 ```
-python validate.py --config configs/similarity_comparison/hstu_mlp.yaml --checkpoint checkpoints/hstu_mlp.pth
-```
-
-To run the embedding clustering analysis:
-
-```
-python analyze_clusters.py --checkpoint checkpoints/sasrec_mol.pt --output mol_clusters.jpg
+python validate.py --config configs/similarity_comparison/hstu_mlp.yaml model.params.init_checkpoint=checkpoints/hstu_mlp.pth
 ```
 
 ## Results on ML-1M
